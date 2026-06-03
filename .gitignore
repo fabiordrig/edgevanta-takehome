@@ -1,0 +1,18 @@
+.planning/
+
+# Dependencies
+node_modules/
+
+# SQLite database — must never be committed (D-02, T-01-01)
+apps/api/db/
+
+# Environment secrets — only .env.example is committed
+.env
+.env.local
+
+# Build outputs
+.next/
+dist/
+.turbo/
+*.tsbuildinfo
+

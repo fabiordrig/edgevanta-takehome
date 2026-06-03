@@ -1,0 +1,51 @@
+-- 001_init.sql — Initial schema for the Edgevanta vector store.
+--
+-- Rowid-alignment contract (D-05):
+--   chunks.id == vec_chunks.rowid
+--
+-- Population pattern (Phase 2, IngestService):
+--   1. INSERT INTO chunks (...) — obtain lastInsertRowid
+--   2. INSERT INTO vec_chunks (rowid, embedding) VALUES (lastInsertRowid, Float32Array)
+--
+-- This guarantees that a KNN MATCH on vec_chunks returns rowids that JOIN 1:1
+-- with chunks.id. Never insert embeddings independently of the chunks row.
+--
+-- All statements use IF NOT EXISTS for idempotency — safe to re-run on every startup.
+
+-- ── chunks ────────────────────────────────────────────────────────────────────
+-- Stores text segments extracted from documents (PDFs chunked by page,
+-- CSV bid items as narrative strings). The `id` AUTOINCREMENT column ensures
+-- monotonically increasing rowids — deleted IDs are never reused, preserving
+-- rowid alignment with vec_chunks (RESEARCH Pitfall 4).
+CREATE TABLE IF NOT EXISTS chunks (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  document_id TEXT    NOT NULL,
+  content     TEXT    NOT NULL,
+  metadata    TEXT,                          -- JSON blob: {page?, rowStart?, rowEnd?, itemCode?}
+  created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ── vec_chunks ────────────────────────────────────────────────────────────────
+-- sqlite-vec vec0 virtual table for KNN vector search.
+-- Dimension is injected at startup by DatabaseService using EMBEDDING_DIM from
+-- @edgevanta/types — {{EMBEDDING_DIM}} is replaced before db.exec() (D-09, EMB-01).
+-- Do NOT hardcode the dimension here; it must match the embedding model output.
+CREATE VIRTUAL TABLE IF NOT EXISTS vec_chunks USING vec0(
+  embedding float[{{EMBEDDING_DIM}}]
+);
+
+-- ── bid_items ─────────────────────────────────────────────────────────────────
+-- Structured rows parsed from DOT bid tabulation CSVs (D-07, EMB-05).
+-- Typed REAL columns support Phase 3 statistical SQL queries (MAD, z-score)
+-- grouped by unit. All numeric columns are nullable — DOT CSVs have missing
+-- or malformed values that must be preserved as NULL rather than coerced.
+CREATE TABLE IF NOT EXISTS bid_items (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  document_id TEXT    NOT NULL,
+  item_code   TEXT,
+  description TEXT,
+  unit        TEXT,
+  quantity    REAL,
+  unit_price  REAL,
+  total_price REAL
+);
