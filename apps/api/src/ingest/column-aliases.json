@@ -1,0 +1,22 @@
+{
+  "item_no": "item_code",
+  "item_number": "item_code",
+  "line_no": "item_code",
+  "pay_item": "item_code",
+  "desc": "description",
+  "item_description": "description",
+  "short_desc": "description",
+  "unit_of_measure": "unit",
+  "uom": "unit",
+  "qty": "quantity",
+  "quantity": "quantity",
+  "est_qty": "quantity",
+  "unit_price": "unit_price",
+  "bid_price": "unit_price",
+  "unit_bid_price": "unit_price",
+  "total": "total_price",
+  "total_price": "total_price",
+  "extended_amount": "total_price",
+  "ext_amount": "total_price",
+  "amount": "total_price"
+}

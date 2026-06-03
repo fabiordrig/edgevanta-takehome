@@ -16,6 +16,26 @@
 export const EMBEDDING_DIM = 1536;
 
 /**
+ * Per-document ingestion summary (D-09). Stored as JSON in documents.parse_log column.
+ */
+export interface ParseLog {
+  /** Header columns that matched an alias or canonical name. */
+  columns_mapped: string[];
+  /** Header columns with no alias (logged, row continues per D-05). */
+  unmapped_columns: string[];
+  /** Total rows parsed from CSV / total chunks from PDF. */
+  rows_processed: number;
+  /** Rows missing description AND unit_price (per D-06). */
+  rows_skipped: number;
+  /** One entry per skipped row with reason text. */
+  skip_reasons: string[];
+  /** True when avgCharsPerPage < 50 triggered vision path (INF-04). */
+  fallback_triggered: boolean;
+  /** Number of chunks created and stored. */
+  chunk_count: number;
+}
+
+/**
  * Document — represents an ingested file (CSV or PDF).
  * Maps to the `documents` logical entity (not a DB table in Phase 1;
  * document_id is stored inline on chunks and bid_items).
@@ -29,6 +49,8 @@ export interface Document {
   type: 'csv' | 'pdf';
   /** ISO 8601 timestamp of ingestion. */
   ingestedAt: string;
+  /** Populated after ingestion. Stored as JSON in documents.parse_log column. */
+  parseLog?: ParseLog;
 }
 
 /**

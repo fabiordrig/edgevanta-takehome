@@ -15,10 +15,8 @@
     "strict": true,
     "incremental": true,
     "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true,
-    "paths": {
-      "@edgevanta/types": ["../../packages/types/src/index.ts"]
-    }
+    "resolveJsonModule": true,
+    "forceConsistentCasingInFileNames": true
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]
