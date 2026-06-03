@@ -113,3 +113,133 @@ export interface BidItem {
   /** Total price = quantity × unitPrice — nullable. */
   totalPrice: number | null;
 }
+
+// ─── Phase 3: Agent Tool I/O Contract Types ───────────────────────────────────
+// HTTP contract types for Phase 3 agent tools. Defined here so both apps/api
+// (tool implementations) and apps/web (chat UI types) consume the same shapes.
+// Do NOT import from @anthropic-ai/sdk in this package — keep it dependency-free.
+// ChatMessage is a structural mirror of Anthropic MessageParam, not an SDK re-export.
+
+/**
+ * ChunkSearchResult — one hit returned by VectorSearchService.knn (AGT-02).
+ *
+ * Maps a single vec_chunks KNN result row joined with chunks and documents tables.
+ * `distance` is the L2 distance from the query vector; lower is more similar.
+ */
+export interface ChunkSearchResult {
+  /** SQLite rowid of the matched chunk (aligns with vec_chunks rowid). */
+  chunkId: number;
+  /** UUID of the source document (FK to documents.id). */
+  documentId: string;
+  /** Raw text content of the chunk. */
+  content: string;
+  /**
+   * Flexible metadata blob decoded from the chunks.metadata JSON column.
+   * Typical keys: page (PDF), rowStart/rowEnd (CSV), itemCode.
+   * Typed as Record<string, unknown> — not any — for strict-mode (DOC-03).
+   */
+  metadata: Record<string, unknown>;
+  /** Original filename from documents.filename. */
+  filename: string;
+  /** L2 distance from query vector to this chunk's embedding. */
+  distance: number;
+}
+
+/**
+ * OutlierLabel — label taxonomy for BidAnalysisService outlier detection (AGT-03).
+ *
+ * Convention (MAD-based, threshold ±3.5):
+ *   - 'statistical_high'  → modifiedZScore > +3.5  (above-median outlier)
+ *   - 'token_bid'         → modifiedZScore < -3.5  (suspiciously low bid)
+ *   - 'statistical_low'   → reserved for below-median outliers that are not
+ *                            token bids; implementations may collapse into
+ *                            'token_bid' — all three labels are exported per AGT-03.
+ */
+export type OutlierLabel = 'token_bid' | 'statistical_high' | 'statistical_low';
+
+/**
+ * Outlier — one flagged bid item from BidAnalysisService.detectOutliers (AGT-03).
+ */
+export interface Outlier {
+  /** SQLite rowid of the bid_items row. */
+  id: number;
+  /** Line item description — may be null for rows with missing descriptions. */
+  description: string | null;
+  /** Unit price in dollars. */
+  unitPrice: number;
+  /** Modified Z-Score (MAD-based): M_i = 0.6745 × (x_i − median) / MAD. */
+  modifiedZScore: number;
+  /** Outlier classification label. */
+  label: OutlierLabel;
+}
+
+/**
+ * OutlierResult — full response from BidAnalysisService.detectOutliers (AGT-03).
+ *
+ * `disclaimer` is always present and contains FHWA guidance text.
+ * `median` and `note` are optional (absent when fewer than 3 data points).
+ */
+export interface OutlierResult {
+  /** Array of flagged bid items. Empty when no outliers or insufficient data. */
+  outliers: Outlier[];
+  /** Median unit_price across the analysed item set. */
+  median?: number;
+  /** Human-readable note (e.g. "Insufficient data for statistical analysis"). */
+  note?: string;
+  /**
+   * FHWA guidance disclaimer — always present.
+   * Text: "Statistical outlier detection uses Modified Z-Score (MAD-based,
+   * threshold ±3.5) per FHWA guidance. Results are indicative only and should
+   * be verified against project-specific conditions before use in bid decisions."
+   */
+  disclaimer: string;
+}
+
+/**
+ * DocumentMeta — one row from the documents table (AGT-04 / list_documents tool).
+ *
+ * Column mapping:
+ *   documents.id          → id
+ *   documents.filename    → filename
+ *   documents.mime_type   → mimeType
+ *   documents.created_at  → createdAt
+ *   documents.parse_log   → parseLog (JSON-decoded)
+ */
+export interface DocumentMeta {
+  /** UUID v4 primary key. */
+  id: string;
+  /** Original filename as uploaded — nullable (SQL column allows NULL). */
+  filename: string | null;
+  /** MIME type (e.g. "text/csv", "application/pdf") — nullable. */
+  mimeType: string | null;
+  /** ISO 8601 timestamp of ingestion (documents.created_at). */
+  createdAt: string;
+  /** Ingestion summary decoded from the parse_log JSON column. */
+  parseLog: ParseLog;
+}
+
+/**
+ * ChatMessage — one turn in a client-facing conversation (AGT-07).
+ *
+ * Structural mirror of Anthropic MessageParam (role + string content).
+ * The server maps this to MessageParam before passing to toolRunner.
+ * Do NOT import MessageParam from @anthropic-ai/sdk here — keep this package
+ * dependency-free.
+ */
+export interface ChatMessage {
+  /** Conversation participant. */
+  role: 'user' | 'assistant';
+  /** Text content of the turn. */
+  content: string;
+}
+
+/**
+ * ChatRequest — POST /agent/chat request body shape (AGT-07).
+ *
+ * The client sends the full message history each turn; the server passes it
+ * directly to toolRunner (no server-side session storage).
+ */
+export interface ChatRequest {
+  /** Full conversation history including the new user message at the end. */
+  messages: ChatMessage[];
+}
