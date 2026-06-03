@@ -15,4 +15,6 @@ apps/api/db/
 dist/
 .turbo/
 *.tsbuildinfo
+CLAUDE.md
+HANDOFF.md
 

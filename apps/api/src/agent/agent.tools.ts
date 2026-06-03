@@ -66,5 +66,19 @@ export function buildAgentTools(deps: AgentToolDeps) {
     run: async () => JSON.stringify(deps.documents.list()),
   });
 
-  return [searchDocumentsTool, detectOutliersTool, listDocumentsTool];
+  const getContractorTotalsTool = betaZodTool({
+    name: 'get_contractor_totals',
+    description:
+      'Aggregate total bids per contractor by summing total_price across all ingested CSV rows. Returns contractors sorted by total bid ascending. Use for questions about overall bid rankings, lowest/highest bidder, or total project cost per contractor.',
+    inputSchema: z.object({
+      filenameFilter: z
+        .string()
+        .optional()
+        .describe('Optional filename substring to scope to a specific document'),
+    }),
+    run: async ({ filenameFilter }) =>
+      JSON.stringify(deps.bidAnalysis.getContractorTotals(filenameFilter)),
+  });
+
+  return [searchDocumentsTool, detectOutliersTool, listDocumentsTool, getContractorTotalsTool];
 }

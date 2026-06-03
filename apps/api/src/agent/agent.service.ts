@@ -39,9 +39,10 @@ const MAX_ITERATIONS = 10;
  */
 const SYSTEM_PROMPT = `You are a construction estimating assistant for DOT bid tabulation data.
 
-You have access to three tools:
+You have access to four tools:
 - search_documents: semantic search over ingested CSV and PDF data. Returns top-k matching chunks with source filename and metadata.
 - detect_outliers: statistical outlier detection on bid item unit prices using Modified Z-Score (MAD-based, threshold 3.5). Returns labeled outliers (token_bid / statistical_high / statistical_low) with an FHWA disclaimer.
+- get_contractor_totals: aggregate total bids per contractor. Use this for questions about overall bid rankings, lowest/highest bidder, or total project cost per contractor. Do NOT use search_documents for aggregation questions.
 - list_documents: list all ingested documents with metadata (filename, type, parse log).
 
 Rules:
@@ -50,7 +51,9 @@ Rules:
 3. If retrieved context does not contain enough information to answer accurately, respond with exactly: "I don't have enough information in the ingested documents to answer this question accurately." followed by an explanation of what was searched and what was missing.
 4. Never fabricate prices, quantities, or item codes not found in the retrieved chunks.
 5. For statistical questions about pricing patterns or unusual bids, use detect_outliers.
-6. If asked what documents are available, use list_documents.`;
+6. If asked what documents are available, use list_documents.
+7. For questions about total bids per contractor, lowest bidder, or bid rankings, use get_contractor_totals — never loop with search_documents for aggregation.
+8. Never use filler, pleasantries, or preamble. No "Sure!", "Of course!", "Is there anything else?", or similar. Start responses directly with the answer.`;
 
 /**
  * AgentService — drives the full tool-use loop via betaZodTool + toolRunner (AGT-06).
@@ -124,17 +127,24 @@ export class AgentService {
           { signal: controller.signal },
         );
 
+        let turn = 0;
         for await (const messageStream of runner) {
+          turn++;
+          this.logger.debug(`toolRunner turn ${turn} starting`);
+          let tokenCount = 0;
           for await (const event of messageStream) {
             if (
               event.type === 'content_block_delta' &&
               event.delta.type === 'text_delta'
             ) {
+              tokenCount++;
               subject.next({ data: { token: event.delta.text } });
             }
           }
+          this.logger.debug(`toolRunner turn ${turn} done — ${tokenCount} tokens emitted`);
         }
 
+        this.logger.debug('toolRunner complete — emitting done');
         subject.next({ data: { done: true } });
       } catch (err) {
         this.logger.error('AgentService stream error', err);

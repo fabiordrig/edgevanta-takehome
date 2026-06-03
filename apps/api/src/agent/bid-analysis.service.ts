@@ -10,14 +10,25 @@ export const FHWA_DISCLAIMER =
   'Statistical outlier detection uses Modified Z-Score (MAD-based, threshold +/-3.5) per FHWA guidance. ' +
   'Results are indicative only and should be verified against project-specific conditions before use in bid decisions.';
 
-/**
- * Local interface for rows returned by the bid_items query.
- * unit_price is guaranteed non-null by the WHERE clause.
- */
 interface BidRow {
   id: number;
   description: string | null;
   unit_price: number;
+}
+
+interface ChunkRow {
+  content: string;
+}
+
+export interface ContractorTotal {
+  contractor: string;
+  total_bid: number;
+  items_found: number;
+}
+
+export interface ContractorTotalsResult {
+  contractors: ContractorTotal[];
+  note?: string;
 }
 
 /**
@@ -169,5 +180,67 @@ export class BidAnalysisService {
       median: med,
       disclaimer: FHWA_DISCLAIMER,
     };
+  }
+
+  /**
+   * Aggregate total bids per contractor by parsing chunk content.
+   *
+   * Chunks store pipe-separated KV pairs including `contractor: <name>` and
+   * `total_price: <value>` when the source CSV had those columns. This method
+   * reads all chunks, parses those fields, and sums total_price per contractor.
+   *
+   * Optionally scoped to a filename substring for multi-document projects.
+   */
+  getContractorTotals(filenameFilter?: string): ContractorTotalsResult {
+    const db = this.databaseService.database;
+
+    const rows = filenameFilter
+      ? (db
+          .prepare(
+            `SELECT c.content FROM chunks c
+             JOIN documents d ON c.document_id = d.id
+             WHERE d.filename LIKE ?`,
+          )
+          .all(`%${filenameFilter}%`) as ChunkRow[])
+      : (db.prepare('SELECT content FROM chunks').all() as ChunkRow[]);
+
+    const totals = new Map<string, { total: number; count: number }>();
+
+    for (const { content } of rows) {
+      const kv: Record<string, string> = {};
+      for (const part of content.split(' | ')) {
+        const idx = part.indexOf(': ');
+        if (idx !== -1) {
+          kv[part.slice(0, idx).trim()] = part.slice(idx + 2).trim();
+        }
+      }
+
+      const contractor = kv['contractor'];
+      const totalPrice = parseFloat(kv['total_price'] ?? '');
+      if (!contractor || isNaN(totalPrice)) continue;
+
+      const existing = totals.get(contractor) ?? { total: 0, count: 0 };
+      totals.set(contractor, {
+        total: existing.total + totalPrice,
+        count: existing.count + 1,
+      });
+    }
+
+    if (totals.size === 0) {
+      return {
+        contractors: [],
+        note: 'No contractor or total_price data found in ingested chunks. Re-upload the CSV after the latest ingestion fix.',
+      };
+    }
+
+    const contractors: ContractorTotal[] = [...totals.entries()]
+      .map(([contractor, { total, count }]) => ({
+        contractor,
+        total_bid: Math.round(total * 100) / 100,
+        items_found: count,
+      }))
+      .sort((a, b) => a.total_bid - b.total_bid);
+
+    return { contractors };
   }
 }

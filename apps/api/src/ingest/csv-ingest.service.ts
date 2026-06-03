@@ -165,7 +165,7 @@ export class CsvIngestService {
       const quantity = this.parseNumeric(quantityRaw);
       const total_price = this.parseNumeric(totalPriceRaw);
 
-      // D-01: pipe-separated KV chunk text — only non-null/non-empty fields
+      // D-01: pipe-separated KV chunk text — canonical fields + non-empty unmapped columns
       const kvParts: string[] = [];
       if (item_code) kvParts.push(`item_code: ${item_code}`);
       if (description) kvParts.push(`description: ${description}`);
@@ -173,6 +173,12 @@ export class CsvIngestService {
       if (unit_price !== null) kvParts.push(`unit_price: ${unit_price}`);
       if (total_price !== null) kvParts.push(`total_price: ${total_price}`);
       if (quantity !== null) kvParts.push(`quantity: ${quantity}`);
+
+      // Append unmapped columns that have values — preserves context like contractor/bidder name
+      for (const key of unmappedColumns) {
+        const val = record[key];
+        if (val && val.trim()) kvParts.push(`${key}: ${val.trim()}`);
+      }
 
       const chunkText = kvParts.join(' | ');
       chunkTexts.push(chunkText);

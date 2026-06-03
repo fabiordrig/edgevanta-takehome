@@ -1,25 +1,33 @@
-import type { Document } from '@edgevanta/types';
+import UploadPanel from '@/components/UploadPanel';
+import ChatPanel from '@/components/ChatPanel';
 
 /**
- * Placeholder home page — Phase 1 only.
+ * HomePage — Phase 4 split-layout composition.
  *
- * Imports `Document` from @edgevanta/types to prove cross-package type sharing
- * compiles in the frontend (ROADMAP Success Criterion 5).
- * The `transpilePackages: ['@edgevanta/types']` in next.config.ts + path alias
- * in tsconfig.json make this import resolve through pnpm's workspace symlinks.
+ * Server Component that composes the two Client Component panels:
+ *   - Left (~30%): UploadPanel — drag-and-drop file ingestion + document list
+ *   - Right (~70%): ChatPanel  — streaming agent chat
  *
- * Real upload UI and chat UI are deferred to Phase 4 (UI-02, UI-03).
+ * Layout contract (UI-SPEC.md D-01, D-02):
+ *   - Root: flex h-screen overflow-hidden — no page scroll
+ *   - Left:  w-[30%] border-r flex flex-col
+ *   - Right: flex-1 flex flex-col
+ *
+ * This file is intentionally a Server Component — no use-client directive.
+ * It imports Client Components, which is correct App Router composition.
  */
 export default function HomePage() {
-  // Typed empty array proves the import resolves at compile time.
-  // In Phase 4 this will be replaced with server-fetched data.
-  const documents: Document[] = [];
-
   return (
-    <main>
-      <h1>Edgevanta Construction Estimating Agent</h1>
-      <p>Documents ingested: {documents.length}</p>
-      <p>Upload and chat UI coming in Phase 4.</p>
+    <main className="flex h-screen overflow-hidden">
+      {/* Left panel — upload and document list (~30%) */}
+      <div className="w-[30%] border-r flex flex-col">
+        <UploadPanel />
+      </div>
+
+      {/* Right panel — streaming chat (~70%) */}
+      <div className="flex-1 flex flex-col">
+        <ChatPanel />
+      </div>
     </main>
   );
 }
