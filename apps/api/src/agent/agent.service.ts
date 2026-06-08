@@ -1,4 +1,5 @@
 import { Injectable, Logger, MessageEvent } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import Anthropic from '@anthropic-ai/sdk';
 import type { MessageParam } from '@anthropic-ai/sdk/resources/messages';
 import { Subject, Observable } from 'rxjs';
@@ -68,7 +69,8 @@ Rules:
  *     (Pitfall 3 / T-03-11: stops upstream Anthropic consumption on disconnect)
  *
  * No manual tool_use loop — toolRunner handles all stop_reason logic (AGT-06).
- * ANTHROPIC_API_KEY guarded in constructor (T-03-10 / mirrors EmbeddingService pattern).
+ * ANTHROPIC_API_KEY read via ConfigService (ENG-05 / D-16 — mirrors EmbeddingService pattern).
+ * Joi validationSchema in ConfigModule ensures key is present at startup (ENG-04).
  */
 @Injectable()
 export class AgentService {
@@ -79,8 +81,12 @@ export class AgentService {
     private readonly vectorSearch: VectorSearchService,
     private readonly bidAnalysis: BidAnalysisService,
     private readonly documents: DocumentsService,
+    private readonly config: ConfigService,
   ) {
-    const apiKey = process.env.ANTHROPIC_API_KEY;
+    // ConfigService.get() instead of process.env.ANTHROPIC_API_KEY (ENG-05 / D-16)
+    // Defense-in-depth guard: Joi already validates at startup, but this catch
+    // covers any future configuration path that bypasses ConfigModule.
+    const apiKey = this.config.get<string>('ANTHROPIC_API_KEY');
     if (!apiKey) {
       throw new Error('ANTHROPIC_API_KEY environment variable is not set');
     }
@@ -91,11 +97,11 @@ export class AgentService {
    * Stream a grounded agent response for the given conversation history.
    *
    * @param messages - Full MessageParam[] history (user + assistant turns).
-   *                   The controller in Plan 05 maps ChatMessage[] → MessageParam[].
+   *                   The controller maps ChatRequestDto.messages → MessageParam[].
    * @returns Observable<MessageEvent> emitting:
    *   - { data: { token: string } } for each text-delta token
    *   - { data: { done: true } } after the final assistant turn
-   *   Completes when the assistant turn finishes or errors on Anthropic API failure.
+   *   Errors propagate via subject.error() — controller handles the {error} SSE frame.
    */
   stream(messages: MessageParam[]): Observable<MessageEvent> {
     const subject = new Subject<MessageEvent>();
