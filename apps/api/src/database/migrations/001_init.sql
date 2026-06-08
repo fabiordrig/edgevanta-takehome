@@ -47,7 +47,8 @@ CREATE TABLE IF NOT EXISTS bid_items (
   unit        TEXT,
   quantity    REAL,
   unit_price  REAL,
-  total_price REAL
+  total_price REAL,
+  contractor  TEXT
 );
 
 -- ── documents ─────────────────────────────────────────────────────────────────
