@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   Body,
   Controller,
   Get,
@@ -9,9 +8,10 @@ import {
 } from '@nestjs/common';
 import type { Response } from 'express';
 import type { MessageParam } from '@anthropic-ai/sdk/resources/messages';
-import type { ChatMessage, ChatRequest, DocumentMeta } from '@edgevanta/types';
+import type { DocumentMeta } from '@edgevanta/types';
 import { AgentService } from './agent.service';
 import { DocumentsService } from './documents.service';
+import { ChatRequestDto } from '../common/dto/chat-request.dto';
 
 /**
  * AgentController — exposes the SSE chat endpoint that streams agent
@@ -22,11 +22,16 @@ import { DocumentsService } from './documents.service';
  *   stack caused NestJS to buffer the Observable until completion — tokens never
  *   flushed progressively. Raw res.write() fixes this.
  *
- * Request validation (T-03-13):
- *   Validates that body.messages is a non-empty array where each element has:
- *   - role: 'user' | 'assistant'
- *   - content: non-empty string
- *   Throws BadRequestException before reaching AgentService on malformed input.
+ * Request validation (ENG-03 / D-13, D-14):
+ *   ValidationPipe + ChatRequestDto handles all validation via class-validator
+ *   decorators. The hand-rolled validateChatRequest() method has been removed.
+ *   Invalid bodies return 400 with field-level details before reaching AgentService.
+ *
+ * SSE error frames (ENG-01 / D-10, D-11):
+ *   - {error: "..."} — distinct error frame on agent failure
+ *   - {token: "..."} — text delta (progressive)
+ *   - {done: true} — signals successful completion
+ *   All res.write/res.end calls are guarded by !res.writableEnded (D-11).
  */
 @Controller('agent')
 export class AgentController {
@@ -44,20 +49,19 @@ export class AgentController {
    * Observable output when @Post and @Sse are stacked — tokens never flush
    * until the Observable completes. Raw Express writes flush per-token.
    *
-   * SSE frame format (UI-01):
+   * SSE frame format (UI-01 / ENG-01):
    *   data: {"token":"..."}   — text delta token (arrives progressively)
-   *   data: {"done":true}     — signals end of the agent turn
+   *   data: {"done":true}     — signals successful end of the agent turn
+   *   data: {"error":"..."}   — signals agent failure (distinct from done — ENG-01)
    */
   @Post('chat')
-  chat(@Body() body: ChatRequest, @Res() res: Response): void {
-    this.validateChatRequest(body);
-
+  chat(@Body() body: ChatRequestDto, @Res() res: Response): void {
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
     res.flushHeaders();
 
-    const messages: MessageParam[] = body.messages.map((msg: ChatMessage) => ({
+    const messages: MessageParam[] = body.messages.map((msg) => ({
       role: msg.role,
       content: msg.content,
     }));
@@ -66,14 +70,34 @@ export class AgentController {
       `chat — ${messages.length} turn(s), last role: ${messages[messages.length - 1]?.role}`,
     );
 
-    this.agentService.stream(messages).subscribe({
-      next: (event) => res.write(`data: ${JSON.stringify(event.data)}\n\n`),
-      error: (err) => {
-        this.logger.error('chat stream error', err);
-        res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
-        res.end();
+    const subscription = this.agentService.stream(messages).subscribe({
+      next: (event) => {
+        // Guard against write-after-end on client disconnect (D-11 / RESEARCH Pitfall 3)
+        if (!res.writableEnded) {
+          res.write(`data: ${JSON.stringify(event.data)}\n\n`);
+        }
       },
-      complete: () => res.end(),
+      error: (err) => {
+        // Log server-side detail; send only generic message to client (T-05-08 / D-10)
+        this.logger.error('chat stream error', err);
+        if (!res.writableEnded) {
+          res.write(
+            `data: ${JSON.stringify({ error: 'Agent error. Please try again.' })}\n\n`,
+          );
+          res.end();
+        }
+      },
+      complete: () => {
+        if (!res.writableEnded) {
+          res.end();
+        }
+      },
+    });
+
+    // Unsubscribe on client disconnect — triggers finalize() in AgentService
+    // which aborts the upstream Anthropic API call (D-11 / T-03-11)
+    res.on('close', () => {
+      subscription.unsubscribe();
     });
   }
 
@@ -92,50 +116,5 @@ export class AgentController {
     const docs = this.documentsService.list();
     this.logger.log(`listDocuments — returning ${docs.length} document(s)`);
     return docs;
-  }
-
-  /**
-   * Validate that the incoming body is a well-formed ChatRequest.
-   *
-   * Throws BadRequestException (HTTP 400) on any violation — preventing
-   * malformed input from reaching the Anthropic SDK (T-03-13 ASVS L1).
-   */
-  private validateChatRequest(body: ChatRequest): void {
-    if (!body || typeof body !== 'object') {
-      throw new BadRequestException(
-        'Request body is required — send Content-Type: application/json with a ChatRequest object',
-      );
-    }
-
-    if (!Array.isArray(body.messages)) {
-      throw new BadRequestException(
-        'body.messages must be an array of ChatMessage objects',
-      );
-    }
-
-    if (body.messages.length === 0) {
-      throw new BadRequestException(
-        'body.messages must contain at least one message',
-      );
-    }
-
-    for (let i = 0; i < body.messages.length; i++) {
-      const msg = body.messages[i];
-      if (!msg || typeof msg !== 'object') {
-        throw new BadRequestException(
-          `body.messages[${i}] must be an object with role and content`,
-        );
-      }
-      if (msg.role !== 'user' && msg.role !== 'assistant') {
-        throw new BadRequestException(
-          `body.messages[${i}].role must be 'user' or 'assistant', got: '${String(msg.role)}'`,
-        );
-      }
-      if (typeof msg.content !== 'string' || msg.content.length === 0) {
-        throw new BadRequestException(
-          `body.messages[${i}].content must be a non-empty string`,
-        );
-      }
-    }
   }
 }
