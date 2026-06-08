@@ -1,5 +1,6 @@
 'use client';
 import { useState, useCallback, useRef } from 'react';
+import { toast } from 'sonner';
 import type { ChatMessage } from '@edgevanta/types';
 import { API_BASE } from '@/lib/api';
 
@@ -15,6 +16,7 @@ import { API_BASE } from '@/lib/api';
  *  - Double-newline SSE frame boundaries (\n\n) (Pitfall 3)
  *  - Abort-on-unmount / superseded request via AbortController (Pitfall 6)
  *  - Blinking cursor: empty assistant bubble appended before first token (D-12)
+ *  - SSE {error} frame: toasts the error and preserves partial content (ENG-01 / D-12)
  */
 export function useSseChat() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -74,11 +76,12 @@ export function useSseChat() {
             if (!frame.startsWith('data: ')) continue;
 
             // CR-02: guard against malformed frames (server errors, comments, partial chunks)
-            let payload: { token?: string; done?: boolean };
+            let payload: { token?: string; done?: boolean; error?: string };
             try {
               payload = JSON.parse(frame.slice(6)) as {
                 token?: string;
                 done?: boolean;
+                error?: string;
               };
             } catch {
               continue;
@@ -97,6 +100,15 @@ export function useSseChat() {
                 }
                 return updated;
               });
+            }
+
+            // ENG-01 / D-12: detect {error} frame BEFORE the {done} check
+            // Partial content in the assistant bubble is PRESERVED (not removed).
+            // toast.error() shows user-visible error; streamDone re-enables input.
+            if ('error' in payload && payload.error) {
+              toast.error(payload.error);
+              streamDone = true;
+              break;
             }
 
             if (payload.done) {
