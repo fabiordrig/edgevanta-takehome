@@ -23,15 +23,44 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
     this.db = new Database(dbPath);
     sqliteVec.load(this.db);
 
-    const migrationSql = fs
-      .readFileSync(
-        path.join(__dirname, 'migrations', '001_init.sql'),
-        'utf8',
-      )
-      .replace(/\{\{EMBEDDING_DIM\}\}/g, String(EMBEDDING_DIM));
+    // ── Run-once sorted-glob migration runner ─────────────────────────────────
+    // (a) Ensure bookkeeping table exists — safe to run on every startup.
+    this.db.exec(
+      'CREATE TABLE IF NOT EXISTS schema_migrations (filename TEXT PRIMARY KEY, applied_at DATETIME DEFAULT CURRENT_TIMESTAMP)',
+    );
 
-    this.db.exec(migrationSql);
+    // (b) Discover all *.sql files in the migrations directory, sorted ascending
+    //     by filename so 001_init.sql runs before 002_contractor.sql.
+    const migrationsDir = path.join(__dirname, 'migrations');
+    const migrationFiles = fs
+      .readdirSync(migrationsDir)
+      .filter((f) => f.endsWith('.sql'))
+      .sort();
 
+    // (c) Apply each migration file exactly once.
+    for (const filename of migrationFiles) {
+      const alreadyApplied = this.db
+        .prepare('SELECT 1 FROM schema_migrations WHERE filename = ?')
+        .get(filename);
+
+      if (alreadyApplied) {
+        this.logger.debug(`Migration already applied, skipping: ${filename}`);
+        continue;
+      }
+
+      const sqlContent = fs
+        .readFileSync(path.join(migrationsDir, filename), 'utf8')
+        .replace(/\{\{EMBEDDING_DIM\}\}/g, String(EMBEDDING_DIM));
+
+      this.db.exec(sqlContent);
+      this.db
+        .prepare('INSERT INTO schema_migrations (filename) VALUES (?)')
+        .run(filename);
+
+      this.logger.log(`Applied migration: ${filename}`);
+    }
+
+    // ── sqlite-vec health check ────────────────────────────────────────────────
     const row = this.db
       .prepare('SELECT vec_version() as vec_version')
       .get() as { vec_version: string } | undefined;

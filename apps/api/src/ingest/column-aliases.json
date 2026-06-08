@@ -42,5 +42,13 @@
   "bid_total_amount": "total_price",
   "total_amount": "total_price",
   "total_bid_amount": "total_price",
-  "line_total": "total_price"
+  "line_total": "total_price",
+
+  "contractor": "contractor",
+  "bidder": "contractor",
+  "bidder_name": "contractor",
+  "company": "contractor",
+  "company_name": "contractor",
+  "vendor": "contractor",
+  "firm": "contractor"
 }

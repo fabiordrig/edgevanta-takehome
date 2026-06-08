@@ -91,6 +91,7 @@ export interface Chunk {
  *   quantity REAL
  *   unit_price REAL
  *   total_price REAL
+ *   contractor TEXT
  *
  * Numeric fields are nullable — DOT CSVs have missing/malformed values.
  * All nullable columns typed `T | null` to match SQL REAL (nullable by default).
@@ -112,6 +113,8 @@ export interface BidItem {
   unitPrice: number | null;
   /** Total price = quantity × unitPrice — nullable. */
   totalPrice: number | null;
+  /** Bidding contractor/company name — nullable (absent in non-bid-tabulation CSVs). */
+  contractor: string | null;
 }
 
 // ─── Phase 3: Agent Tool I/O Contract Types ───────────────────────────────────

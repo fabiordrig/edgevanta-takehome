@@ -135,6 +135,7 @@ export class CsvIngestService {
       quantity: number | null;
       unit_price: number | null;
       total_price: number | null;
+      contractor: string | null;
       row_index: number;
     }> = [];
 
@@ -160,6 +161,9 @@ export class CsvIngestService {
       const unit = this.resolveField(record, 'unit', this.aliasMap);
       const quantityRaw = this.resolveField(record, 'quantity', this.aliasMap);
       const totalPriceRaw = this.resolveField(record, 'total_price', this.aliasMap);
+      // Contractor is now a mapped canonical field — resolves from contractor/bidder/company/etc.
+      // null when not present in source CSV; does NOT gate row inclusion.
+      const contractor = this.resolveField(record, 'contractor', this.aliasMap);
 
       const unit_price = this.parseNumeric(unitPriceRaw);
       const quantity = this.parseNumeric(quantityRaw);
@@ -174,7 +178,9 @@ export class CsvIngestService {
       if (total_price !== null) kvParts.push(`total_price: ${total_price}`);
       if (quantity !== null) kvParts.push(`quantity: ${quantity}`);
 
-      // Append unmapped columns that have values — preserves context like contractor/bidder name
+      // Append unmapped columns that have values — contractor is now mapped, so it
+      // will NOT appear in unmappedColumns and is excluded from chunk text (correct:
+      // the typed bid_items.contractor column replaces the free-text capture).
       for (const key of unmappedColumns) {
         const val = record[key];
         if (val && val.trim()) kvParts.push(`${key}: ${val.trim()}`);
@@ -191,6 +197,7 @@ export class CsvIngestService {
         quantity,
         unit_price,
         total_price,
+        contractor,
         row_index: i,
       });
     }
@@ -214,7 +221,7 @@ export class CsvIngestService {
       'INSERT INTO vec_chunks(embedding) VALUES (?)',
     );
     const insertBidItem = db.prepare(
-      'INSERT INTO bid_items (document_id, item_code, description, unit, quantity, unit_price, total_price) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      'INSERT INTO bid_items (document_id, item_code, description, unit, quantity, unit_price, total_price, contractor) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
     );
 
     let chunkCount = 0;
@@ -255,6 +262,7 @@ export class CsvIngestService {
           meta.quantity,
           meta.unit_price,
           meta.total_price,
+          meta.contractor,
         );
       });
 
