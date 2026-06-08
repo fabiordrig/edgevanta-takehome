@@ -16,8 +16,10 @@ interface BidRow {
   unit_price: number;
 }
 
-interface ChunkRow {
-  content: string;
+/** Typed row for the contractor-totals SQL query (ENG-07). */
+interface ContractorRow {
+  contractor: string | null;
+  total_price: number | null;
 }
 
 export interface ContractorTotal {
@@ -183,53 +185,78 @@ export class BidAnalysisService {
   }
 
   /**
-   * Aggregate total bids per contractor by parsing chunk content.
+   * Aggregate total bids per contractor from the typed `bid_items.contractor` column.
    *
-   * Chunks store pipe-separated KV pairs including `contractor: <name>` and
-   * `total_price: <value>` when the source CSV had those columns. This method
-   * reads all chunks, parses those fields, and sums total_price per contractor.
+   * Reads the typed SQL column directly — no chunk-text KV parsing (ENG-07).
+   * NULL-contractor rows are excluded and counted; the note surfaces the skip count
+   * so callers know totals are partial and re-upload can fix it (D-08).
    *
    * Optionally scoped to a filename substring for multi-document projects.
+   *
+   * Security (T-05-01): filenameFilter is always bound as a parameterized `?` with
+   * `%...%` — never interpolated into the SQL string.
    */
   getContractorTotals(filenameFilter?: string): ContractorTotalsResult {
     const db = this.databaseService.database;
 
+    // ── Fetch rows with non-null contractor ───────────────────────────────────
+    // T-05-01: filenameFilter bound as parameterized `?` — no string interpolation.
     const rows = filenameFilter
       ? (db
           .prepare(
-            `SELECT c.content FROM chunks c
-             JOIN documents d ON c.document_id = d.id
-             WHERE d.filename LIKE ?`,
+            `SELECT b.contractor, b.total_price FROM bid_items b
+             JOIN documents d ON b.document_id = d.id
+             WHERE d.filename LIKE ? AND b.contractor IS NOT NULL`,
           )
-          .all(`%${filenameFilter}%`) as ChunkRow[])
-      : (db.prepare('SELECT content FROM chunks').all() as ChunkRow[]);
+          .all(`%${filenameFilter}%`) as ContractorRow[])
+      : (db
+          .prepare(
+            'SELECT contractor, total_price FROM bid_items WHERE contractor IS NOT NULL',
+          )
+          .all() as ContractorRow[]);
 
+    // ── Compute total row count (for NULL-skip note) ───────────────────────────
+    const totalRows = filenameFilter
+      ? ((
+          db
+            .prepare(
+              `SELECT COUNT(*) as c FROM bid_items b
+               JOIN documents d ON b.document_id = d.id
+               WHERE d.filename LIKE ?`,
+            )
+            .get(`%${filenameFilter}%`) as { c: number }
+        ).c)
+      : ((db.prepare('SELECT COUNT(*) as c FROM bid_items').get() as { c: number }).c);
+
+    const rowsWithContractor = rows.length;
+    const nullCount = totalRows - rowsWithContractor;
+
+    // ── Aggregate total_price per contractor ──────────────────────────────────
     const totals = new Map<string, { total: number; count: number }>();
 
-    for (const { content } of rows) {
-      const kv: Record<string, string> = {};
-      for (const part of content.split(' | ')) {
-        const idx = part.indexOf(': ');
-        if (idx !== -1) {
-          kv[part.slice(0, idx).trim()] = part.slice(idx + 2).trim();
-        }
-      }
-
-      const contractor = kv['contractor'];
-      const totalPrice = parseFloat(kv['total_price'] ?? '');
-      if (!contractor || isNaN(totalPrice)) continue;
+    for (const row of rows) {
+      // contractor is guaranteed non-null by the WHERE clause above
+      const contractor = row.contractor as string;
+      // Skip rows where total_price is null — can't contribute to the sum
+      if (row.total_price === null) continue;
 
       const existing = totals.get(contractor) ?? { total: 0, count: 0 };
       totals.set(contractor, {
-        total: existing.total + totalPrice,
+        total: existing.total + row.total_price,
         count: existing.count + 1,
       });
     }
 
+    // ── NULL-skip note (D-08) ─────────────────────────────────────────────────
+    const note =
+      nullCount > 0
+        ? `${nullCount} rows skipped (no contractor). Re-upload the CSV to get full totals.`
+        : undefined;
+
     if (totals.size === 0) {
       return {
         contractors: [],
-        note: 'No contractor or total_price data found in ingested chunks. Re-upload the CSV after the latest ingestion fix.',
+        note: note ?? 'No contractor data found. Re-upload the CSV to get full totals.',
       };
     }
 
@@ -241,6 +268,6 @@ export class BidAnalysisService {
       }))
       .sort((a, b) => a.total_bid - b.total_bid);
 
-    return { contractors };
+    return { contractors, note };
   }
 }
