@@ -17,6 +17,7 @@ export default tseslint.config(
       '**/*.js',
       '**/*.mjs',
       '**/*.cjs',
+      '**/next-env.d.ts', // Next.js auto-generated file — contains triple-slash references by design
     ],
   },
   {
