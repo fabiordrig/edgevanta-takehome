@@ -1,10 +1,17 @@
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Inject, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import OpenAI from 'openai';
 import { PDFParse } from 'pdf-parse';
 import { ParseLog } from '@edgevanta/types';
-import { DatabaseService } from '../database/database.service';
 import { EmbeddingService } from './embedding.service';
+import {
+  CHUNK_REPOSITORY,
+  IChunkRepository,
+} from '../database/interfaces/chunk.repository.interface';
+import {
+  DOCUMENT_REPOSITORY,
+  IDocumentRepository,
+} from '../database/interfaces/document.repository.interface';
 
 /**
  * PdfIngestService — handles PDF text extraction via pdf-parse, falls back to
@@ -14,6 +21,10 @@ import { EmbeddingService } from './embedding.service';
  *
  * Satisfies INF-04 (PDF extraction + vision fallback), INF-05 (PDF chunking),
  * and INF-06 (parse log with fallback_triggered).
+ *
+ * All SQL is delegated to repository interfaces (ENG-06):
+ *   - IChunkRepository.dualWriteChunk — chunks + vec_chunks atomic write (D-05)
+ *   - IDocumentRepository.insertDocument — documents row write
  */
 @Injectable()
 export class PdfIngestService {
@@ -21,7 +32,10 @@ export class PdfIngestService {
   private readonly openai: OpenAI;
 
   constructor(
-    private readonly databaseService: DatabaseService,
+    @Inject(CHUNK_REPOSITORY)
+    private readonly chunkRepo: IChunkRepository,
+    @Inject(DOCUMENT_REPOSITORY)
+    private readonly documentRepo: IDocumentRepository,
     private readonly embeddingService: EmbeddingService,
     private readonly config: ConfigService,
   ) {
@@ -89,40 +103,24 @@ export class PdfIngestService {
     const embeddings = await this.embeddingService.embed(chunkTexts);
 
     // Step 5 — Dual-write chunks + vec_chunks (rowid alignment D-05)
-    const db = this.databaseService.database;
+    // dualWriteChunk wraps both chunks + vec_chunks inserts in a db.transaction
+    // per chunk — rowid-alignment contract is maintained inside the repository.
+    // The outer transaction is no longer needed since each dualWriteChunk call
+    // is already atomic and preserves the rowid alignment invariant.
+    for (let i = 0; i < chunkTexts.length; i++) {
+      const metadata: Record<string, unknown> = {
+        source_type: 'pdf',
+        chunk_index: i,
+        document_id: documentId,
+      };
 
-    const insertChunk = db.prepare(
-      'INSERT INTO chunks (document_id, content, metadata) VALUES (?, ?, ?)',
-    );
-    const insertVec = db.prepare(
-      'INSERT INTO vec_chunks(embedding) VALUES (?)',
-    );
-
-    const dualWrite = db.transaction(() => {
-      for (let i = 0; i < chunkTexts.length; i++) {
-        const metadata: Record<string, unknown> = {
-          source_type: 'pdf',
-          chunk_index: i,
-          document_id: documentId,
-        };
-
-        const { lastInsertRowid } = insertChunk.run(
-          documentId,
-          chunkTexts[i],
-          JSON.stringify(metadata),
-        );
-
-        if (!lastInsertRowid) {
-          throw new Error(
-            `chunks INSERT returned no rowid for chunk_index ${i}`,
-          );
-        }
-
-        insertVec.run(new Float32Array(embeddings[i]));
-      }
-    });
-
-    dualWrite();
+      this.chunkRepo.dualWriteChunk(
+        documentId,
+        chunkTexts[i],
+        JSON.stringify(metadata),
+        new Float32Array(embeddings[i]),
+      );
+    }
 
     // Step 6 — Write documents row with 7-field D-09 parse log
     const parseLog: ParseLog = {
@@ -135,9 +133,7 @@ export class PdfIngestService {
       chunk_count: chunkTexts.length,
     };
 
-    db.prepare(
-      'INSERT INTO documents (id, filename, mime_type, parse_log) VALUES (?, ?, ?, ?)',
-    ).run(
+    this.documentRepo.insertDocument(
       documentId,
       file.originalname,
       file.mimetype,

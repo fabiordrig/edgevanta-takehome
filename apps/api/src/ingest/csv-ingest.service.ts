@@ -1,9 +1,20 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Inject, Logger } from '@nestjs/common';
 import { parse } from 'csv-parse/sync';
 import { ParseLog } from '@edgevanta/types';
-import { DatabaseService } from '../database/database.service';
 import { EmbeddingService } from './embedding.service';
 import columnAliases from './column-aliases.json';
+import {
+  CHUNK_REPOSITORY,
+  IChunkRepository,
+} from '../database/interfaces/chunk.repository.interface';
+import {
+  BID_ITEM_REPOSITORY,
+  IBidItemRepository,
+} from '../database/interfaces/bid-item.repository.interface';
+import {
+  DOCUMENT_REPOSITORY,
+  IDocumentRepository,
+} from '../database/interfaces/document.repository.interface';
 
 /**
  * CsvIngestService — parses a DOT bid tabulation CSV, resolves column aliases,
@@ -11,6 +22,11 @@ import columnAliases from './column-aliases.json';
  *
  * Partial-ingest model (D-12): valid rows are committed even if other rows have
  * parse errors. No full-document rollback.
+ *
+ * All SQL is delegated to repository interfaces (ENG-06):
+ *   - IChunkRepository.dualWriteChunk — chunks + vec_chunks atomic write (D-05)
+ *   - IBidItemRepository.insertBidItem — bid_items row write
+ *   - IDocumentRepository.insertDocument — documents row write
  */
 @Injectable()
 export class CsvIngestService {
@@ -21,7 +37,12 @@ export class CsvIngestService {
     columnAliases as Record<string, string>;
 
   constructor(
-    private readonly databaseService: DatabaseService,
+    @Inject(CHUNK_REPOSITORY)
+    private readonly chunkRepo: IChunkRepository,
+    @Inject(BID_ITEM_REPOSITORY)
+    private readonly bidItemRepo: IBidItemRepository,
+    @Inject(DOCUMENT_REPOSITORY)
+    private readonly documentRepo: IDocumentRepository,
     private readonly embeddingService: EmbeddingService,
   ) {}
 
@@ -212,18 +233,6 @@ export class CsvIngestService {
     const embeddings = await this.embeddingService.embed(chunkTexts);
 
     // ── Step 5: Dual-write in per-row transactions ───────────────────────────
-    const db = this.databaseService.database;
-
-    const insertChunk = db.prepare(
-      'INSERT INTO chunks (document_id, content, metadata) VALUES (?, ?, ?)',
-    );
-    const insertVec = db.prepare(
-      'INSERT INTO vec_chunks(embedding) VALUES (?)',
-    );
-    const insertBidItem = db.prepare(
-      'INSERT INTO bid_items (document_id, item_code, description, unit, quantity, unit_price, total_price, contractor) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-    );
-
     let chunkCount = 0;
 
     for (let j = 0; j < chunkTexts.length; j++) {
@@ -238,35 +247,27 @@ export class CsvIngestService {
         document_id: documentId,
       };
 
-      const writeRow = db.transaction(() => {
-        // INSERT chunks first → obtain lastInsertRowid (rowid-alignment contract)
-        const { lastInsertRowid } = insertChunk.run(
-          documentId,
-          chunkText,
-          JSON.stringify(metadata),
-        );
-        if (!lastInsertRowid) {
-          throw new Error(
-            `chunks INSERT returned no rowid for row_index ${meta.row_index}`,
-          );
-        }
-        // INSERT vec_chunks — auto rowid aligns with chunks.id via shared transaction order
-        insertVec.run(new Float32Array(embedding));
+      // dualWriteChunk wraps both chunks + vec_chunks inserts in a db.transaction
+      // — rowid-alignment contract (D-05) is maintained inside the repository.
+      this.chunkRepo.dualWriteChunk(
+        documentId,
+        chunkText,
+        JSON.stringify(metadata),
+        new Float32Array(embedding),
+      );
 
-        // INSERT bid_items for Phase 3 statistical queries
-        insertBidItem.run(
-          documentId,
-          meta.item_code,
-          meta.description,
-          meta.unit,
-          meta.quantity,
-          meta.unit_price,
-          meta.total_price,
-          meta.contractor,
-        );
+      // INSERT bid_items for Phase 3 statistical queries
+      this.bidItemRepo.insertBidItem({
+        documentId,
+        itemCode: meta.item_code,
+        description: meta.description,
+        unit: meta.unit,
+        quantity: meta.quantity,
+        unitPrice: meta.unit_price,
+        totalPrice: meta.total_price,
+        contractor: meta.contractor,
       });
 
-      writeRow();
       chunkCount++;
     }
 
@@ -285,9 +286,12 @@ export class CsvIngestService {
       chunk_count: chunkCount,
     };
 
-    db.prepare(
-      'INSERT INTO documents (id, filename, mime_type, parse_log) VALUES (?, ?, ?, ?)',
-    ).run(documentId, file.originalname, file.mimetype, JSON.stringify(parseLog));
+    this.documentRepo.insertDocument(
+      documentId,
+      file.originalname,
+      file.mimetype,
+      JSON.stringify(parseLog),
+    );
 
     this.logger.log(`Document record inserted (id: ${documentId})`);
 
