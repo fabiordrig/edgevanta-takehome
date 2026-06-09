@@ -52,6 +52,10 @@ make build      Build all packages
 make api        Run only the NestJS API (port 3001)
 make web        Run only the Next.js web app (port 3000)
 make typecheck  TypeScript compiler check across all packages
+make lint       Run ESLint across all packages
+make test       Run the Jest test suite
+make test-e2e   Run the E2E test suite
+make test-all   Run unit + E2E tests
 make clean      Remove build artifacts and caches
 make help       Show all commands
 ```
@@ -104,11 +108,12 @@ packages/types/    Shared TypeScript interfaces (Document, Chunk, BidItem)
 
 ### Agent tools
 
-| Tool               | Purpose                                                                  |
-| ------------------ | ------------------------------------------------------------------------ |
-| `search_documents` | Semantic KNN search over embedded chunks                                 |
-| `detect_outliers`  | Modified z-score (MAD-based) deviation detection on bid item unit prices |
-| `list_documents`   | List all ingested documents with metadata                                |
+| Tool                    | Purpose                                                                             |
+| ----------------------- | ----------------------------------------------------------------------------------- |
+| `search_documents`      | Semantic KNN search over embedded chunks                                            |
+| `detect_outliers`       | Modified z-score (MAD-based) deviation detection on bid item unit prices            |
+| `list_documents`        | List all ingested documents with metadata                                           |
+| `get_contractor_totals` | Aggregate total bids per contractor. Use for lowest bidder / bid ranking questions. |
 
 ---
 
@@ -178,7 +183,7 @@ packages/types/    Shared TypeScript interfaces (Document, Chunk, BidItem)
 
 ### 7. SSE (fetch + ReadableStream) over WebSockets
 
-**Decision:** Server-Sent Events for streaming agent responses. The client uses `fetch` + `response.body.getReader()`, not the native `EventSource` API.
+**Decision:** Server-Sent Events for streaming agent responses. The server streams via raw `@Res()` + `res.write()` per token — `@Post` + `@Sse` buffered the Observable until completion (NestJS issue), so the response is written manually. The client uses `fetch` + `response.body.getReader()`, not the native `EventSource` API.
 
 **Rationale:** SSE is simpler than WebSockets for unidirectional token streaming — no upgrade handshake, no framing protocol, no client library required. The native `EventSource` API was ruled out because it only supports GET; the chat endpoint requires a POST body containing the full conversation history (`MessageParam[]`).
 
@@ -188,7 +193,7 @@ packages/types/    Shared TypeScript interfaces (Document, Chunk, BidItem)
 
 ### 8. Tool-use agent architecture (each capability = typed tool)
 
-**Decision:** Each agent capability is an explicit, typed tool with a Zod input schema: `search_documents`, `detect_outliers`, `list_documents`.
+**Decision:** Each agent capability is an explicit, typed tool with a Zod input schema: `search_documents`, `detect_outliers`, `list_documents`, `get_contractor_totals`.
 
 **Rationale:** Structured tool calls produce verifiable, loggable, grounded answers — the agent can only cite information it actually retrieved. A mega-prompt approach produces fluent but ungrounded responses that hallucinate bid prices and unit costs.
 
