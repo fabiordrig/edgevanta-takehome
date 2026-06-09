@@ -119,6 +119,13 @@ export class AgentService {
     //   outer: for await (const messageStream of runner)
     //   inner: for await (const event of messageStream)
     (async () => {
+      // Per-request metrics counters (OBS-03, D-09/10) — local to this invocation,
+      // never stored as class-level state so multiple concurrent streams don't interfere.
+      const startedAt = Date.now();
+      let toolCallCount = 0;
+      let totalTokens = 0;
+      let turn = 0;
+
       try {
         const runner = this.client.beta.messages.toolRunner(
           {
@@ -133,7 +140,6 @@ export class AgentService {
           { signal: controller.signal },
         );
 
-        let turn = 0;
         for await (const messageStream of runner) {
           turn++;
           this.logger.debug(`toolRunner turn ${turn} starting`);
@@ -148,6 +154,12 @@ export class AgentService {
             }
           }
           this.logger.debug(`toolRunner turn ${turn} done — ${tokenCount} tokens emitted`);
+
+          // Accumulate metrics from the completed turn (D-08, D-09).
+          // finalMessage() resolves from the already-consumed stream — no re-fetch.
+          const finalMsg = await messageStream.finalMessage();
+          toolCallCount += finalMsg.content.filter((block) => block.type === 'tool_use').length;
+          totalTokens += (finalMsg.usage?.input_tokens ?? 0) + (finalMsg.usage?.output_tokens ?? 0);
         }
 
         this.logger.debug('toolRunner complete — emitting done');
@@ -157,6 +169,10 @@ export class AgentService {
         subject.error(err);
       } finally {
         subject.complete();
+        // Structured metrics log — counts only, never message content (T-06-05, D-07).
+        this.logger.log(
+          `agent complete — ${toolCallCount} tool calls, ${turn} turns, ${totalTokens} tokens, ${Date.now() - startedAt}ms`,
+        );
       }
     })();
 

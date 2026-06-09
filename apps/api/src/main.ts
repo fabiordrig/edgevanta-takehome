@@ -4,11 +4,11 @@ import { Logger, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
+import { LoggingInterceptor } from './common/logging.interceptor';
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);
 
-  // Read config via ConfigService — env vars are now validated by Joi at startup (ENG-04, ENG-05)
   const config = app.get(ConfigService);
 
   app.enableShutdownHooks();
@@ -18,14 +18,9 @@ async function bootstrap(): Promise<void> {
     credentials: false,
   });
 
-  // Global ValidationPipe: converts plain objects to DTO class instances and validates
-  // transform: true — enables @Type() decorator to convert nested plain objects
-  // whitelist: true — strips unknown properties from request bodies
   app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true }));
-
-  // Global exception filter: normalizes all unhandled errors to { statusCode, message, error }
-  // No stack traces in the response body (ENG-02 / T-05-06)
   app.useGlobalFilters(new AllExceptionsFilter());
+  app.useGlobalInterceptors(new LoggingInterceptor());
 
   const port = config.get<number>('PORT') ?? 3001;
   await app.listen(port);
