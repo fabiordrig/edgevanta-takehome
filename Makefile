@@ -1,4 +1,4 @@
-.PHONY: setup install dev build api web typecheck lint format clean test
+.PHONY: setup install dev build api web typecheck lint format clean test test-e2e test-all
 
 setup: ## First-time setup: install deps and copy .env.example → .env
 	@if [ ! -f .env ]; then \
@@ -33,8 +33,14 @@ lint: ## Run ESLint across the monorepo
 format: ## Format all files with Prettier
 	pnpm format
 
-test: ## Run the API test suite
+test: ## Run unit tests
 	pnpm test
+
+test-e2e: ## Run E2E tests
+	pnpm --filter @edgevanta/api test:e2e
+
+test-all: ## Run unit + E2E tests
+	pnpm test && pnpm --filter @edgevanta/api test:e2e
 
 clean: ## Remove build artifacts and caches
 	rm -rf .turbo node_modules apps/api/dist apps/api/node_modules \
