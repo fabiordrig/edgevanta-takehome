@@ -210,3 +210,4 @@ a manual label set; outlier accuracy uses synthetic datasets with known ground t
 - **Prompt injection via uploaded file** — malicious content embedded in a CSV or PDF could influence agent reasoning. Known, deliberately-deferred risk for a local-only demo with no multi-tenant surface.
 - **Single-node SSE** — real-time streaming works on a single process. Horizontal scaling would require a Redis pub/sub fan-out layer.
 - **No sample data included** — upload your own DOT bid tabulation CSV or scanned PDF. The agent is designed around publicly available state DOT bid tab formats.
+- **No page cap on vision fallback** — a 300-page scanned PDF renders all pages and sends each to `gpt-4o-mini` vision. No per-request page limit is enforced; large plan sets can generate significant API spend.
