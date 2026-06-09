@@ -109,7 +109,7 @@ export class CsvIngestService {
           h
             .trim()
             .toLowerCase()
-            .replace(/[\s.\-\/]+/g, '_'),
+            .replace(/[\s.\-/]+/g, '_'),
         ),
       skip_empty_lines: true,
       relax_column_count: true,

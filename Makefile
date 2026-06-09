@@ -1,4 +1,4 @@
-.PHONY: setup install dev build api web typecheck clean
+.PHONY: setup install dev build api web typecheck lint format clean
 
 setup: ## First-time setup: install deps and copy .env.example → .env
 	@if [ ! -f .env ]; then \
@@ -26,6 +26,12 @@ web: ## Run only the Next.js web app (port 3000)
 
 typecheck: ## Run TypeScript compiler check across all packages
 	pnpm check-types
+
+lint: ## Run ESLint across the monorepo
+	pnpm lint
+
+format: ## Format all files with Prettier
+	pnpm format
 
 clean: ## Remove build artifacts and caches
 	rm -rf .turbo node_modules apps/api/dist apps/api/node_modules \
