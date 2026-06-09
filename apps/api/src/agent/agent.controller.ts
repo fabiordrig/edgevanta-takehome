@@ -3,6 +3,7 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
   Logger,
   Post,
   Res,
@@ -49,6 +50,7 @@ export class AgentController {
    *   data: {"done":true}     — signals end of the agent turn
    */
   @Post('chat')
+  @HttpCode(200)
   chat(@Body() body: ChatRequest, @Res() res: Response): void {
     this.validateChatRequest(body);
 
