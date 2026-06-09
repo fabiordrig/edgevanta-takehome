@@ -12,9 +12,16 @@ jest.mock('@anthropic-ai/sdk', () => {
 
   // Inner: async iterable of events (BetaMessageStream stub).
   // Matches the inner `for await (const event of messageStream)` loop in agent.service.ts.
-  async function* fakeMessageStream() {
-    yield stubEvent;
-  }
+  // Must also expose finalMessage() — agent.service.ts calls it after the loop for metrics.
+  const fakeMessageStream = () => ({
+    [Symbol.asyncIterator]: async function* () {
+      yield stubEvent;
+    },
+    finalMessage: async () => ({
+      content: [],
+      usage: { input_tokens: 0, output_tokens: 0 },
+    }),
+  });
 
   // Outer: async iterable of message streams (BetaToolRunner<true> stub).
   // Matches the outer `for await (const messageStream of runner)` loop in agent.service.ts.
@@ -92,9 +99,21 @@ describe('POST /agent/chat (E2E — mocked SDK)', () => {
   afterAll(async () => {
     await app.close();
     // Clean up temp DB files (ignore errors — file may not exist if init failed early)
-    try { fs.unlinkSync(tempDbPath); } catch { /* noop */ }
-    try { fs.unlinkSync(`${tempDbPath}-wal`); } catch { /* noop */ }
-    try { fs.unlinkSync(`${tempDbPath}-shm`); } catch { /* noop */ }
+    try {
+      fs.unlinkSync(tempDbPath);
+    } catch {
+      /* noop */
+    }
+    try {
+      fs.unlinkSync(`${tempDbPath}-wal`);
+    } catch {
+      /* noop */
+    }
+    try {
+      fs.unlinkSync(`${tempDbPath}-shm`);
+    } catch {
+      /* noop */
+    }
   });
 
   it('streams a token frame then a done frame (TST-04)', async () => {
