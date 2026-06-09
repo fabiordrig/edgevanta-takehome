@@ -68,7 +68,7 @@ export class ChunkRepository implements IChunkRepository {
           `chunks INSERT returned no rowid for document_id=${documentId}`,
         );
       }
-      insertVec.run(lastInsertRowid, embedding);
+      insertVec.run(Number(lastInsertRowid), embedding);
     });
 
     write();
