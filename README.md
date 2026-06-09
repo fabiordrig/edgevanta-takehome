@@ -1,24 +1,71 @@
 # Edgevanta Construction Estimating Agent
 
-AI agent platform for construction estimating teams. Ingests messy real-world data — DOT bid tabulation CSVs and scanned PDF plan sets — generates embeddings for semantic search, and answers natural language questions via a tool-use agent architecture. Designed to demonstrate grounded answers, statistical deviation detection, and graceful handling of dirty inputs.
+An AI agent platform for construction estimating teams. Ingests messy real-world data — DOT bid
+tabulation CSVs and scanned PDF plan sets — generates embeddings for semantic search, and answers
+natural language questions via a tool-use agent architecture.
 
-**Core value:** The agent must give accurate, grounded answers — and know when it does not have enough information. Everything else is secondary.
+## What is this
 
----
+A question-answering agent over construction project data. You upload a CSV or PDF, the system
+embeds it and stores it in a local SQLite vector store, and you ask questions in plain English.
+The agent retrieves semantically relevant chunks, runs statistical deviation detection when
+relevant, and streams the answer back token-by-token.
+
+**Core value:** the agent must give accurate, grounded answers — and know when it does not have
+enough information. Everything else is secondary.
+
+## The Challenge
+
+Construction estimating data is not clean. DOT bid tabulation spreadsheets use inconsistent column
+names across states (`contractor`, `bidder`, `company`, `firm`). Scanned plan sets have no text
+layer — `pdf-parse` returns empty strings. Bid prices are right-skewed: a single high outlier
+inflates the mean and hides real anomalies.
+
+**How this system handles it:**
+
+Column aliases are resolved at ingest time via a configurable mapping so the same tool query works
+regardless of the state the CSV came from. When `pdf-parse` extracts less than 50 characters per
+page, the system falls back to rendering pages as images and passing them to `gpt-4o-mini` vision.
+Deviation detection uses the Modified Z-Score (MAD-based) rather than a plain z-score — MAD is
+resistant to the extreme values it is meant to detect.
+
+## Architecture
+
+```
+apps/api/      NestJS 11 — ingest, embedding, agent, SQLite + sqlite-vec
+apps/web/      Next.js 15 — upload panel + streaming chat UI
+packages/types/  Shared TypeScript interfaces (Document, Chunk, BidItem)
+```
+
+- **Ingest:** CSV or PDF → `pdf-parse` / `csv-parse` → chunked → `text-embedding-3-small` → `sqlite-vec`
+- **Query:** user message → `claude-sonnet-4-6` → tool calls → KNN lookup → streamed answer
+- **Streaming:** raw `@Res()` + `res.write()` per token — `@Post` + `@Sse` buffered the Observable
+  until completion (NestJS issue), so tokens are written manually to the response stream
+
+## Tech Stack
+
+| Layer         | Choice                               | Reason                                                                     |
+| ------------- | ------------------------------------ | -------------------------------------------------------------------------- |
+| Runtime       | Node.js 22                           | LTS; explicit NestJS 11 requirement                                        |
+| API           | NestJS 11 + Express v5               | Module system maps to tool boundaries; SSE CORS bug rules out Fastify      |
+| Frontend      | Next.js 15 + React 19                | App Router Route Handlers handle file upload without body-size limit       |
+| LLM           | Claude claude-sonnet-4-6             | Best speed/intelligence for tool-use; `betaZodTool` + `toolRunner` helpers |
+| Embeddings    | OpenAI `text-embedding-3-small`      | 1536-dim float32; cost-effective at $0.02/1M tokens                        |
+| Vector store  | SQLite + sqlite-vec 0.1.9            | Zero infra; `vec0` virtual tables; native KNN; persists between sessions   |
+| SQLite driver | better-sqlite3                       | `sqlite-vec` extension loading fails on arm64 with node:sqlite built-in    |
+| PDF extract   | pdf-parse + pdf-to-img + gpt-4o-mini | Text layer first; vision fallback for scanned PDFs with no text            |
+| CSV parse     | csv-parse                            | Node.js stream API; handles messy column names                             |
+| Schema        | Zod 4 + betaZodTool                  | Single validation layer for API DTOs and agent tool inputs                 |
+| Monorepo      | Turborepo + pnpm workspaces          | Incremental caching; `^build` dependency graph                             |
 
 ## Prerequisites
 
-| Requirement       | Version  | Where to get it                      |
-| ----------------- | -------- | ------------------------------------ |
-| Node.js           | 22 LTS   | https://nodejs.org/en/download       |
-| pnpm              | 9+       | `npm install -g pnpm`                |
-| make              | built-in | macOS/Linux: already installed       |
-| Anthropic API key | —        | https://console.anthropic.com/       |
-| OpenAI API key    | —        | https://platform.openai.com/api-keys |
+- Node.js 22+
+- pnpm 9+
+- Anthropic API key — [console.anthropic.com](https://console.anthropic.com/)
+- OpenAI API key — [platform.openai.com/api-keys](https://platform.openai.com/api-keys)
 
----
-
-## Quick start
+## Setup
 
 ```bash
 git clone <repo-url>
@@ -26,11 +73,12 @@ cd edgevanta-takehome
 make setup
 ```
 
-`make setup` installs all dependencies and creates `.env` from `.env.example`. Open `.env` and fill in the two required keys:
+`make setup` installs all dependencies and creates `.env` from `.env.example`. Open `.env` and
+fill in the two required keys:
 
 ```
-ANTHROPIC_API_KEY=<your key from console.anthropic.com>
-OPENAI_API_KEY=<your key from platform.openai.com/api-keys>
+ANTHROPIC_API_KEY=<your key>
+OPENAI_API_KEY=<your key>
 ```
 
 Then start both apps:
@@ -39,74 +87,37 @@ Then start both apps:
 make dev
 ```
 
-Open http://localhost:3000.
+Open [http://localhost:3000](http://localhost:3000).
 
----
+## Try it
 
-## Available commands
+Open [http://localhost:3000](http://localhost:3000) after `make dev`.
 
-```
-make setup      First-time setup: install deps and copy .env.example → .env
-make dev        Run API + web in parallel (Turborepo)
-make build      Build all packages
-make api        Run only the NestJS API (port 3001)
-make web        Run only the Next.js web app (port 3000)
-make typecheck  TypeScript compiler check across all packages
-make lint       Run ESLint across all packages
-make test       Run the Jest test suite
-make test-e2e   Run the E2E test suite
-make test-all   Run unit + E2E tests
-make clean      Remove build artifacts and caches
-make help       Show all commands
-```
+- **Upload panel (left):** drag and drop a CSV or PDF onto the drop zone. The file is embedded and
+  stored. A success toast appears and the document list refreshes.
+- **Chat panel (right):** ask a question. The agent retrieves relevant chunks, runs deviation
+  detection if relevant, and streams the answer back token-by-token.
 
----
+### Or via curl
 
-## Environment variables
+```bash
+# Ingest a CSV
+curl -X POST http://localhost:3001/ingest \
+  -F "file=@/path/to/bid-tabulation.csv"
 
-All variables live in a single `.env` at the repo root (gitignored). The file is read by NestJS at startup; `NEXT_PUBLIC_API_URL` is inlined into the Next.js client bundle at build time.
+# Ask a question (SSE stream — watch tokens arrive)
+curl -X POST http://localhost:3001/agent/chat \
+  -H "Content-Type: application/json" \
+  -d '{"messages": [{"role": "user", "content": "Which contractor had the lowest total bid?"}]}'
 
-| Variable              | Required | Default                       | Description                                 |
-| --------------------- | -------- | ----------------------------- | ------------------------------------------- |
-| `ANTHROPIC_API_KEY`   | Yes      | —                             | Claude API key for the agent                |
-| `OPENAI_API_KEY`      | Yes      | —                             | OpenAI key for embeddings + vision fallback |
-| `NEXT_PUBLIC_API_URL` | No       | `http://localhost:3001`       | URL the browser uses to reach the API       |
-| `PORT`                | No       | `3001`                        | NestJS server port                          |
-| `CORS_ORIGIN`         | No       | `http://localhost:3000`       | Allowed CORS origin                         |
-| `DB_PATH`             | No       | `apps/api/db/database.sqlite` | SQLite file path                            |
+# List ingested documents
+curl http://localhost:3001/agent/documents | jq '.documents'
 
-> Never prefix `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` with `NEXT_PUBLIC_` — those are server-side secrets and must not be inlined into the client bundle.
-
----
-
-## How it works
-
-The UI is a single-page split layout:
-
-- **Left panel (~30%):** drag and drop a CSV or PDF onto the drop zone (or click Browse Files). The file is POSTed to `/api/ingest`, embedded via `text-embedding-3-small`, and stored in SQLite + sqlite-vec. A success toast fires and the document list refreshes.
-- **Right panel (~70%):** ask a question in the chat textarea. The agent retrieves semantically similar chunks, runs deviation detection if relevant, and streams the answer back token-by-token via SSE. Full conversation history is maintained for multi-turn dialogue.
-
-**End-to-end pipeline:**
-
-```
-upload CSV/PDF  →  /api/ingest  →  pdf-parse / csv-parse  →  OpenAI embedding  →  sqlite-vec store
-                                                                                         |
-ask question  →  /api/agent/chat  →  claude-sonnet-4-6  →  tool calls  →  KNN lookup  →  answer (SSE)
+# Health check
+curl http://localhost:3001/health | jq
 ```
 
----
-
-## Architecture
-
-### Monorepo layout
-
-```
-apps/api/          NestJS 11 — ingest, embedding, agent, SQLite
-apps/web/          Next.js 15 — upload panel + streaming chat UI
-packages/types/    Shared TypeScript interfaces (Document, Chunk, BidItem)
-```
-
-### Agent tools
+## Agent tools
 
 | Tool                    | Purpose                                                                             |
 | ----------------------- | ----------------------------------------------------------------------------------- |
@@ -115,121 +126,87 @@ packages/types/    Shared TypeScript interfaces (Document, Chunk, BidItem)
 | `list_documents`        | List all ingested documents with metadata                                           |
 | `get_contractor_totals` | Aggregate total bids per contractor. Use for lowest bidder / bid ranking questions. |
 
----
+## Make targets
 
-## Key Decisions & Tradeoffs
+| Target           | Description                                   |
+| ---------------- | --------------------------------------------- |
+| `make setup`     | Install deps + copy `.env.example` → `.env`   |
+| `make dev`       | Run API + web in parallel (Turborepo)         |
+| `make api`       | Run only the NestJS API (port 3001)           |
+| `make web`       | Run only the Next.js frontend (port 3000)     |
+| `make build`     | Build all packages                            |
+| `make typecheck` | TypeScript compiler check across all packages |
+| `make lint`      | ESLint across all packages                    |
+| `make format`    | Prettier across all files                     |
+| `make test`      | Run unit tests (32 tests)                     |
+| `make test-e2e`  | Run E2E tests                                 |
+| `make test-all`  | Run unit + E2E tests                          |
+| `make clean`     | Remove build artifacts and caches             |
 
-### 1. sqlite-vec over pgvector / Pinecone
+## Environment variables
 
-**Decision:** SQLite as the vector store via the `sqlite-vec` extension (`vec0` virtual tables, native KNN via `MATCH`).
+| Variable              | Required | Default                       | Description                                 |
+| --------------------- | -------- | ----------------------------- | ------------------------------------------- |
+| `ANTHROPIC_API_KEY`   | Yes      | —                             | Claude API key for the agent                |
+| `OPENAI_API_KEY`      | Yes      | —                             | OpenAI key for embeddings + vision fallback |
+| `PORT`                | No       | `3001`                        | NestJS server port                          |
+| `DB_PATH`             | No       | `apps/api/db/database.sqlite` | SQLite file path                            |
+| `CORS_ORIGIN`         | No       | `http://localhost:3000`       | Allowed CORS origin                         |
+| `NEXT_PUBLIC_API_URL` | No       | `http://localhost:3001`       | URL the browser uses to reach the API       |
 
-**Rationale:** Local-first, zero infrastructure. An evaluator must be able to `git clone` + `make setup` + `make dev` with no external services. `better-sqlite3` + `sqlite-vec` persists between sessions and costs nothing to run.
+> Never prefix `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` with `NEXT_PUBLIC_` — those are
+> server-side secrets and must not be inlined into the client bundle.
 
-**Rejected:** pgvector requires a running Postgres instance; Pinecone requires a paid account. Both break the 5-minute setup constraint. `sqlite-vss` was the predecessor — sqlite-vec is its maintained successor.
+## Key Decisions
 
----
-
-### 2. better-sqlite3 over node:sqlite (Node 22 built-in)
-
-**Decision:** `better-sqlite3` (v12) as the SQLite driver rather than the `node:sqlite` built-in that ships with Node 22.
-
-**Rationale:** `sqlite-vec`'s `sqliteVec.load(db)` explicitly supports `better-sqlite3` through its extension-loading API. On macOS arm64, `node:sqlite` is compiled with `OMIT_LOAD_EXTENSION`, which means `sqlite-vec` cannot be loaded — making vector search impossible.
-
-**Rejected:** `node:sqlite` — extension loading disabled on arm64 macOS at compile time.
-
----
-
-### 3. betaZodTool + toolRunner over a manual tool_use loop
-
-**Decision:** Use `@anthropic-ai/sdk`'s `betaZodTool` helper and `toolRunner` to define and execute agent tools, rather than manually parsing `tool_use` content blocks and assembling `tool_result` messages.
-
-**Rationale:** `toolRunner` handles the full multi-turn tool loop automatically — schema serialization from Zod, `tool_result` message construction, and the `end_turn` stop condition. Manual implementation is error-prone: malformed `tool_result` messages return HTTP 400, and the stop condition must be tracked explicitly. Zod schemas serve both the SDK tool definitions and runtime input validation.
-
-**Rejected:** Manual `tool_use` loop — every project that implements it from scratch hits the HTTP 400 pitfall (wrong content block shape for `tool_result`).
-
----
-
-### 4. Modified Z-Score (MAD-based) over plain z-score for deviation detection
-
-**Decision:** Modified z-score (`|0.6745 * (x - median) / MAD|`) rather than classical z-score (`|(x - mean) / stddev|`).
-
-**Rationale:** Construction bid data is right-skewed — a few very high unit prices inflate both the mean and standard deviation, masking genuine outliers. MAD (Median Absolute Deviation) is resistant to extreme values. The 0.6745 scaling factor makes the modified z-score directly comparable to the classical threshold (3.5).
-
-**Rejected:** Plain z-score — sensitive to the outliers it is meant to detect.
-
----
-
-### 5. pdf-parse + OpenAI Vision fallback over OCR-only
-
-**Decision:** Primary extraction uses `pdf-parse` (text layer). When extracted text is below a threshold (~50 chars/page), fall back to rendering pages as images via `pdf-to-img@6.1.0` and sending them to `gpt-4o-mini` vision.
-
-**Rationale:** Scanned plan sets have no text layer — `pdf-parse` returns empty strings. The vision fallback handles those cases without system dependencies (no Ghostscript, no ImageMagick). `pdf-to-img@6.1.0` ships pre-compiled darwin-arm64 binaries.
-
-**Substitution note:** The plan originally specified `pdf-img-convert@2.0.0`. All versions declare `canvas` as a hard dependency requiring `pangocairo`, which is not available on macOS arm64 without Homebrew. `pdf-to-img@6.1.0` was substituted.
-
-**Rejected:** OCR-only (pdftotext, Tesseract) — requires system installs that break the 5-minute setup constraint.
-
----
-
-### 6. NestJS Express adapter over Fastify
-
-**Decision:** Keep NestJS on its default Express (v5) adapter.
-
-**Rationale:** There is a confirmed bug (#8717) where Fastify's SSE implementation mishandles CORS preflight for the `text/event-stream` content type, causing browsers to reject the stream before the first token arrives. Express handles SSE CORS correctly.
-
-**Rejected:** Fastify — SSE CORS bug #8717 confirmed, fix not merged.
-
----
-
-### 7. SSE (fetch + ReadableStream) over WebSockets
-
-**Decision:** Server-Sent Events for streaming agent responses. The server streams via raw `@Res()` + `res.write()` per token — `@Post` + `@Sse` buffered the Observable until completion (NestJS issue), so the response is written manually. The client uses `fetch` + `response.body.getReader()`, not the native `EventSource` API.
-
-**Rationale:** SSE is simpler than WebSockets for unidirectional token streaming — no upgrade handshake, no framing protocol, no client library required. The native `EventSource` API was ruled out because it only supports GET; the chat endpoint requires a POST body containing the full conversation history (`MessageParam[]`).
-
-**Rejected:** WebSockets — bidirectional, heavier protocol; overkill for streaming-only. Native `EventSource` — GET-only, incompatible with POST body requirement.
-
----
-
-### 8. Tool-use agent architecture (each capability = typed tool)
-
-**Decision:** Each agent capability is an explicit, typed tool with a Zod input schema: `search_documents`, `detect_outliers`, `list_documents`, `get_contractor_totals`.
-
-**Rationale:** Structured tool calls produce verifiable, loggable, grounded answers — the agent can only cite information it actually retrieved. A mega-prompt approach produces fluent but ungrounded responses that hallucinate bid prices and unit costs.
-
-**Rejected:** Single mega-prompt with context injection — no tool-call audit trail, no structured refusal when data is absent.
-
----
+| Decision            | Choice                               | Why not the alternative                                                                                                 |
+| ------------------- | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------- |
+| Vector store        | sqlite-vec                           | pgvector requires Postgres; Pinecone requires a paid account — both break the 5-minute setup                            |
+| SQLite driver       | better-sqlite3                       | `node:sqlite` (Node 22 built-in) is compiled with `OMIT_LOAD_EXTENSION` on arm64 macOS — sqlite-vec cannot load         |
+| Agent tool loop     | `betaZodTool` + `toolRunner`         | Manual `tool_use` loop requires precise `tool_result` content block shapes; wrong shape returns HTTP 400 silently       |
+| Deviation detection | Modified Z-Score (MAD)               | Plain z-score is sensitive to the outliers it is meant to detect; MAD is resistant                                      |
+| PDF extraction      | pdf-parse + pdf-to-img + gpt-4o-mini | OCR tools (pdftotext, Tesseract) require system installs; `pdf-img-convert` has a hard `pangocairo` dependency on arm64 |
+| HTTP adapter        | Express (not Fastify)                | Fastify SSE CORS bug #8717: browser rejects `text/event-stream` preflight before first token                            |
+| SSE implementation  | `@Res()` + `res.write()`             | `@Post` + `@Sse` + Observable buffers all tokens until the stream ends — nothing arrives until `end_turn`               |
 
 ## How I'd Evaluate This Agent
 
 Four measurable dimensions, each with a concrete metric and a measurement approach:
 
-1. **Grounding rate** — percentage of responses that cite a source filename. A response without a `filename:` citation may be hallucinating. _Measurement:_ automated test against a known-answer corpus; the evaluator checks that every factual claim maps to a retrieved chunk.
+1. **Grounding rate** — percentage of responses that cite a source filename. A response without a
+   `filename:` citation may be hallucinating. _Measurement:_ automated test against a known-answer
+   corpus; the evaluator checks that every factual claim maps to a retrieved chunk.
 
-2. **Refusal precision / recall** — distinguishes false positives (agent refuses when relevant data exists) from false negatives (agent answers without grounding). _Measurement:_ precision and recall computed over a hand-labeled eval set of questions with known "answerable / unanswerable" ground truth.
+2. **Refusal precision / recall** — distinguishes false positives (agent refuses when relevant data
+   exists) from false negatives (agent answers without grounding). _Measurement:_ precision and
+   recall computed over a hand-labeled eval set of questions with known "answerable / unanswerable"
+   ground truth.
 
-3. **Retrieval quality (MRR / Recall@k)** — does the correct chunk appear in the top-k results? _Measurement:_ MRR or Recall@5 over a hold-out query set where each query has at least one known-relevant chunk; computed offline by probing the `search_documents` tool.
+3. **Retrieval quality (MRR / Recall@k)** — does the correct chunk appear in the top-k results?
+   _Measurement:_ MRR or Recall@5 over a hold-out query set where each query has at least one
+   known-relevant chunk; computed offline by probing the `search_documents` tool.
 
-4. **Outlier detection accuracy** — does `detect_outliers` flag the right bid items? _Measurement:_ precision and recall of the MAD-based tool against a synthetic dataset with planted outliers. Concrete example: `SR-89-bid-tabulation.csv` contains 2 deliberately-planted outlier unit prices; a passing run must flag exactly those two items.
+4. **Outlier detection accuracy** — does `detect_outliers` flag the right bid items?
+   _Measurement:_ precision and recall of the MAD-based tool against a synthetic dataset with
+   planted outliers. Concrete example: `SR-89-bid-tabulation.csv` contains 2 deliberately-planted
+   outlier unit prices; a passing run must flag exactly those two items.
 
-**Tooling note:** Grounding rate is well-suited to LLM-as-judge scoring; retrieval relevance needs a manual label set; outlier accuracy uses synthetic datasets with known ground truth.
-
----
+**Tooling note:** Grounding rate is well-suited to LLM-as-judge scoring; retrieval relevance needs
+a manual label set; outlier accuracy uses synthetic datasets with known ground truth.
 
 ## Future Work
 
-| Item                                                                  | Why deferred                                                                                                      | Expected impact                                                                            |
-| --------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| Reranking step (KNN → cross-encoder reranker before context assembly) | Standard KNN is sufficient for the demo corpus size; a cross-encoder adds a model dependency and extra latency    | +10–30% retrieval precision on large or ambiguous corpora                                  |
-| IQR cross-validation alongside MAD                                    | MAD alone is robust enough for current bid datasets; cross-validation is a refinement, not a necessity            | Reduces false positives on small samples where MAD is unstable                             |
-| Page-count cap for vision fallback on large PDFs (>50 pages)          | Demo PDFs are small; no runaway-cost risk in the current eval environment                                         | Prevents unbounded vision API spend when evaluators upload large scanned plan sets         |
-| Similarity score threshold for refusal                                | Prompt-only refusal rule works for the demo; threshold tuning requires a labeled eval set that does not yet exist | Grounded, score-based refusals instead of a prompt heuristic — measurable precision/recall |
-| CSV alias map as a configurable table (not hardcoded JSON)            | Hardcoded aliases cover the known DOT column formats; externalising is a usability refinement                     | Evaluators can add column mappings without a code change                                   |
+| Item                                                         | Why deferred                                                                                        | Expected impact                                                |
+| ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| Reranking step (KNN → cross-encoder before context assembly) | Standard KNN is sufficient for the demo corpus; a cross-encoder adds a model dependency and latency | +10–30% retrieval precision on large or ambiguous corpora      |
+| IQR cross-validation alongside MAD                           | MAD alone is robust enough for current bid datasets                                                 | Reduces false positives on small samples where MAD is unstable |
+| Page-count cap for vision fallback on large PDFs (>50 pages) | Demo PDFs are small; no runaway-cost risk in the current eval environment                           | Prevents unbounded vision API spend on large scanned plan sets |
+| Similarity score threshold for refusal                       | Prompt-only refusal rule works for the demo; threshold tuning requires a labeled eval set           | Grounded, score-based refusals instead of a prompt heuristic   |
+| CSV alias map as a configurable table (not hardcoded JSON)   | Hardcoded aliases cover the known DOT column formats                                                | Evaluators can add column mappings without a code change       |
 
----
+## Known Limitations
 
-## Accepted risks (demo scope)
-
-- **No authentication:** Single-user local demo. Adding auth is straightforward but out of scope for this evaluation.
-- **Prompt injection via uploaded file:** Malicious content embedded in a CSV or PDF could influence the agent's reasoning. Known, deliberately-deferred risk for a local-only demo with no multi-tenant surface.
+- **No authentication** — single-user local demo. Adding auth (e.g. OIDC) is straightforward but out of scope for this evaluation.
+- **Prompt injection via uploaded file** — malicious content embedded in a CSV or PDF could influence agent reasoning. Known, deliberately-deferred risk for a local-only demo with no multi-tenant surface.
+- **Single-node SSE** — real-time streaming works on a single process. Horizontal scaling would require a Redis pub/sub fan-out layer.
+- **No sample data included** — upload your own DOT bid tabulation CSV or scanned PDF. The agent is designed around publicly available state DOT bid tab formats.
