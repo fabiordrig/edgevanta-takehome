@@ -8,13 +8,13 @@ AI agent platform for construction estimating teams. Ingests messy real-world da
 
 ## Prerequisites
 
-| Requirement | Version | Where to get it |
-|-------------|---------|-----------------|
-| Node.js | 22 LTS | https://nodejs.org/en/download |
-| pnpm | 9+ | `npm install -g pnpm` |
-| make | built-in | macOS/Linux: already installed |
-| Anthropic API key | — | https://console.anthropic.com/ |
-| OpenAI API key | — | https://platform.openai.com/api-keys |
+| Requirement       | Version  | Where to get it                      |
+| ----------------- | -------- | ------------------------------------ |
+| Node.js           | 22 LTS   | https://nodejs.org/en/download       |
+| pnpm              | 9+       | `npm install -g pnpm`                |
+| make              | built-in | macOS/Linux: already installed       |
+| Anthropic API key | —        | https://console.anthropic.com/       |
+| OpenAI API key    | —        | https://platform.openai.com/api-keys |
 
 ---
 
@@ -62,14 +62,14 @@ make help       Show all commands
 
 All variables live in a single `.env` at the repo root (gitignored). The file is read by NestJS at startup; `NEXT_PUBLIC_API_URL` is inlined into the Next.js client bundle at build time.
 
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `ANTHROPIC_API_KEY` | Yes | — | Claude API key for the agent |
-| `OPENAI_API_KEY` | Yes | — | OpenAI key for embeddings + vision fallback |
-| `NEXT_PUBLIC_API_URL` | No | `http://localhost:3001` | URL the browser uses to reach the API |
-| `PORT` | No | `3001` | NestJS server port |
-| `CORS_ORIGIN` | No | `http://localhost:3000` | Allowed CORS origin |
-| `DB_PATH` | No | `apps/api/db/database.sqlite` | SQLite file path |
+| Variable              | Required | Default                       | Description                                 |
+| --------------------- | -------- | ----------------------------- | ------------------------------------------- |
+| `ANTHROPIC_API_KEY`   | Yes      | —                             | Claude API key for the agent                |
+| `OPENAI_API_KEY`      | Yes      | —                             | OpenAI key for embeddings + vision fallback |
+| `NEXT_PUBLIC_API_URL` | No       | `http://localhost:3001`       | URL the browser uses to reach the API       |
+| `PORT`                | No       | `3001`                        | NestJS server port                          |
+| `CORS_ORIGIN`         | No       | `http://localhost:3000`       | Allowed CORS origin                         |
+| `DB_PATH`             | No       | `apps/api/db/database.sqlite` | SQLite file path                            |
 
 > Never prefix `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` with `NEXT_PUBLIC_` — those are server-side secrets and must not be inlined into the client bundle.
 
@@ -104,11 +104,11 @@ packages/types/    Shared TypeScript interfaces (Document, Chunk, BidItem)
 
 ### Agent tools
 
-| Tool | Purpose |
-|------|---------|
-| `search_documents` | Semantic KNN search over embedded chunks |
-| `detect_outliers` | Modified z-score (MAD-based) deviation detection on bid item unit prices |
-| `list_documents` | List all ingested documents with metadata |
+| Tool               | Purpose                                                                  |
+| ------------------ | ------------------------------------------------------------------------ |
+| `search_documents` | Semantic KNN search over embedded chunks                                 |
+| `detect_outliers`  | Modified z-score (MAD-based) deviation detection on bid item unit prices |
+| `list_documents`   | List all ingested documents with metadata                                |
 
 ---
 
@@ -193,6 +193,34 @@ packages/types/    Shared TypeScript interfaces (Document, Chunk, BidItem)
 **Rationale:** Structured tool calls produce verifiable, loggable, grounded answers — the agent can only cite information it actually retrieved. A mega-prompt approach produces fluent but ungrounded responses that hallucinate bid prices and unit costs.
 
 **Rejected:** Single mega-prompt with context injection — no tool-call audit trail, no structured refusal when data is absent.
+
+---
+
+## How I'd Evaluate This Agent
+
+Four measurable dimensions, each with a concrete metric and a measurement approach:
+
+1. **Grounding rate** — percentage of responses that cite a source filename. A response without a `filename:` citation may be hallucinating. _Measurement:_ automated test against a known-answer corpus; the evaluator checks that every factual claim maps to a retrieved chunk.
+
+2. **Refusal precision / recall** — distinguishes false positives (agent refuses when relevant data exists) from false negatives (agent answers without grounding). _Measurement:_ precision and recall computed over a hand-labeled eval set of questions with known "answerable / unanswerable" ground truth.
+
+3. **Retrieval quality (MRR / Recall@k)** — does the correct chunk appear in the top-k results? _Measurement:_ MRR or Recall@5 over a hold-out query set where each query has at least one known-relevant chunk; computed offline by probing the `search_documents` tool.
+
+4. **Outlier detection accuracy** — does `detect_outliers` flag the right bid items? _Measurement:_ precision and recall of the MAD-based tool against a synthetic dataset with planted outliers. Concrete example: `SR-89-bid-tabulation.csv` contains 2 deliberately-planted outlier unit prices; a passing run must flag exactly those two items.
+
+**Tooling note:** Grounding rate is well-suited to LLM-as-judge scoring; retrieval relevance needs a manual label set; outlier accuracy uses synthetic datasets with known ground truth.
+
+---
+
+## Future Work
+
+| Item                                                                  | Why deferred                                                                                                      | Expected impact                                                                            |
+| --------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| Reranking step (KNN → cross-encoder reranker before context assembly) | Standard KNN is sufficient for the demo corpus size; a cross-encoder adds a model dependency and extra latency    | +10–30% retrieval precision on large or ambiguous corpora                                  |
+| IQR cross-validation alongside MAD                                    | MAD alone is robust enough for current bid datasets; cross-validation is a refinement, not a necessity            | Reduces false positives on small samples where MAD is unstable                             |
+| Page-count cap for vision fallback on large PDFs (>50 pages)          | Demo PDFs are small; no runaway-cost risk in the current eval environment                                         | Prevents unbounded vision API spend when evaluators upload large scanned plan sets         |
+| Similarity score threshold for refusal                                | Prompt-only refusal rule works for the demo; threshold tuning requires a labeled eval set that does not yet exist | Grounded, score-based refusals instead of a prompt heuristic — measurable precision/recall |
+| CSV alias map as a configurable table (not hardcoded JSON)            | Hardcoded aliases cover the known DOT column formats; externalising is a usability refinement                     | Evaluators can add column mappings without a code change                                   |
 
 ---
 
