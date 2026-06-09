@@ -89,7 +89,7 @@ describe('CsvIngestService — unmappable columns error path (TST-03 / D-07)', (
       buffer: csvBuffer,
       originalname: 'bad.csv',
       mimetype: 'text/csv',
-    } as Express.Multer.File;
+    } as unknown as Express.Multer.File;
 
     await service.ingest(file, 'doc-1');
 
