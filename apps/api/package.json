@@ -7,7 +7,9 @@
     "build": "nest build",
     "start": "node dist/main.js",
     "check-types": "tsc --noEmit",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "test": "jest",
+    "test:e2e": "jest --config jest-e2e.config.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.100.1",
