@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
   Logger,
   Post,
   Res,
@@ -55,6 +56,7 @@ export class AgentController {
    *   data: {"error":"..."}   — signals agent failure (distinct from done — ENG-01)
    */
   @Post('chat')
+  @HttpCode(200)
   chat(@Body() body: ChatRequestDto, @Res() res: Response): void {
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');

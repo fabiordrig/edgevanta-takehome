@@ -13,6 +13,7 @@ const config: Config = {
   testTimeout: 30000,
   moduleNameMapper: {
     '^@edgevanta/types$': '<rootDir>/../../packages/types/src/index.ts',
+    '^uuid$': '<rootDir>/test/__mocks__/uuid.js',
   },
 };
 
