@@ -10,6 +10,7 @@
   "spec_item": "item_code",
 
   "desc": "description",
+  "item_desc": "description",
   "item_description": "description",
   "pay_item_description": "description",
   "description_of_work": "description",
@@ -30,15 +31,19 @@
   "planned_qty": "quantity",
 
   "unit_price": "unit_price",
+  "unit_pr": "unit_price",
   "bid_price": "unit_price",
   "unit_bid_price": "unit_price",
   "unit_cost": "unit_price",
+  "eng_est_unit_pr": "unit_price",
 
   "total": "total_price",
   "total_price": "total_price",
   "extended_amount": "total_price",
   "ext_amount": "total_price",
+  "ext_amt": "total_price",
   "amount": "total_price",
+  "bid_total": "total_price",
   "bid_total_amount": "total_price",
   "total_amount": "total_price",
   "total_bid_amount": "total_price",
