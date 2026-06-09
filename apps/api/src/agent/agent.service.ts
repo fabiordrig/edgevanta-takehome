@@ -153,13 +153,19 @@ export class AgentService {
               subject.next({ data: { token: event.delta.text } });
             }
           }
-          this.logger.debug(`toolRunner turn ${turn} done — ${tokenCount} tokens emitted`);
+          this.logger.debug(
+            `toolRunner turn ${turn} done — ${tokenCount} tokens emitted`,
+          );
 
           // Accumulate metrics from the completed turn (D-08, D-09).
           // finalMessage() resolves from the already-consumed stream — no re-fetch.
           const finalMsg = await messageStream.finalMessage();
-          toolCallCount += finalMsg.content.filter((block) => block.type === 'tool_use').length;
-          totalTokens += (finalMsg.usage?.input_tokens ?? 0) + (finalMsg.usage?.output_tokens ?? 0);
+          toolCallCount += finalMsg.content.filter(
+            (block) => block.type === 'tool_use',
+          ).length;
+          totalTokens +=
+            (finalMsg.usage?.input_tokens ?? 0) +
+            (finalMsg.usage?.output_tokens ?? 0);
         }
 
         this.logger.debug('toolRunner complete — emitting done');

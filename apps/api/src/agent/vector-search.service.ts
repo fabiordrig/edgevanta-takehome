@@ -63,7 +63,13 @@ export class VectorSearchService {
       chunkId: r.id,
       documentId: r.document_id,
       content: r.content,
-      metadata: (() => { try { return JSON.parse(r.metadata ?? '{}') as Record<string, unknown>; } catch { return {}; } })(),
+      metadata: (() => {
+        try {
+          return JSON.parse(r.metadata ?? '{}') as Record<string, unknown>;
+        } catch {
+          return {};
+        }
+      })(),
       filename: r.filename,
       distance: r.distance,
     }));

@@ -1,4 +1,9 @@
-import { BadRequestException, Injectable, Inject, Logger } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Inject,
+  Logger,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import OpenAI from 'openai';
 import { PDFParse } from 'pdf-parse';
@@ -72,8 +77,7 @@ export class PdfIngestService {
 
     // pdfData.total = number of pages; pdfData.text = full document text
     const numPages = pdfData.total;
-    const avgCharsPerPage =
-      pdfData.text.trim().length / Math.max(numPages, 1);
+    const avgCharsPerPage = pdfData.text.trim().length / Math.max(numPages, 1);
 
     this.logger.log(
       `PDF: numpages=${numPages}, avgCharsPerPage=${avgCharsPerPage.toFixed(2)}, fallback=${avgCharsPerPage < 50}`,

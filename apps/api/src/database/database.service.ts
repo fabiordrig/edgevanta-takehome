@@ -1,4 +1,9 @@
-import { Injectable, OnModuleInit, OnModuleDestroy, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  OnModuleInit,
+  OnModuleDestroy,
+  Logger,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { EMBEDDING_DIM } from '@edgevanta/types';
 import Database from 'better-sqlite3';
@@ -61,9 +66,9 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
     }
 
     // ── sqlite-vec health check ────────────────────────────────────────────────
-    const row = this.db
-      .prepare('SELECT vec_version() as vec_version')
-      .get() as { vec_version: string } | undefined;
+    const row = this.db.prepare('SELECT vec_version() as vec_version').get() as
+      | { vec_version: string }
+      | undefined;
 
     if (!row?.vec_version) {
       throw new Error(

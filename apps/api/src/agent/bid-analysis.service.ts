@@ -214,7 +214,9 @@ export class BidAnalysisService {
     if (totals.size === 0) {
       return {
         contractors: [],
-        note: note ?? 'No contractor data found. Re-upload the CSV to get full totals.',
+        note:
+          note ??
+          'No contractor data found. Re-upload the CSV to get full totals.',
       };
     }
 

@@ -74,11 +74,18 @@ export function buildAgentTools(deps: AgentToolDeps) {
       filenameFilter: z
         .string()
         .optional()
-        .describe('Optional filename substring to scope to a specific document'),
+        .describe(
+          'Optional filename substring to scope to a specific document',
+        ),
     }),
     run: async ({ filenameFilter }) =>
       JSON.stringify(deps.bidAnalysis.getContractorTotals(filenameFilter)),
   });
 
-  return [searchDocumentsTool, detectOutliersTool, listDocumentsTool, getContractorTotalsTool];
+  return [
+    searchDocumentsTool,
+    detectOutliersTool,
+    listDocumentsTool,
+    getContractorTotalsTool,
+  ];
 }

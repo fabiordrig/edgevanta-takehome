@@ -33,8 +33,10 @@ export class CsvIngestService {
   private readonly logger = new Logger(CsvIngestService.name);
 
   /** Alias map from column-aliases.json (keys are post-normalization form). */
-  private readonly aliasMap: Record<string, string> =
-    columnAliases as Record<string, string>;
+  private readonly aliasMap: Record<string, string> = columnAliases as Record<
+    string,
+    string
+  >;
 
   constructor(
     @Inject(CHUNK_REPOSITORY)
@@ -166,8 +168,16 @@ export class CsvIngestService {
     for (let i = 0; i < records.length; i++) {
       const record = records[i];
 
-      const description = this.resolveField(record, 'description', this.aliasMap);
-      const unitPriceRaw = this.resolveField(record, 'unit_price', this.aliasMap);
+      const description = this.resolveField(
+        record,
+        'description',
+        this.aliasMap,
+      );
+      const unitPriceRaw = this.resolveField(
+        record,
+        'unit_price',
+        this.aliasMap,
+      );
 
       // D-06: skip row if description is absent or too short (< 3 chars) —
       // rows without a meaningful description produce semantically poor embeddings.
@@ -181,7 +191,11 @@ export class CsvIngestService {
       const item_code = this.resolveField(record, 'item_code', this.aliasMap);
       const unit = this.resolveField(record, 'unit', this.aliasMap);
       const quantityRaw = this.resolveField(record, 'quantity', this.aliasMap);
-      const totalPriceRaw = this.resolveField(record, 'total_price', this.aliasMap);
+      const totalPriceRaw = this.resolveField(
+        record,
+        'total_price',
+        this.aliasMap,
+      );
       // Contractor is now a mapped canonical field — resolves from contractor/bidder/company/etc.
       // null when not present in source CSV; does NOT gate row inclusion.
       const contractor = this.resolveField(record, 'contractor', this.aliasMap);
@@ -296,6 +310,10 @@ export class CsvIngestService {
     this.logger.log(`Document record inserted (id: ${documentId})`);
 
     // ── Step 7: Return result ─────────────────────────────────────────────────
-    return { document_id: documentId, status: 'ok', chunks_created: chunkCount };
+    return {
+      document_id: documentId,
+      status: 'ok',
+      chunks_created: chunkCount,
+    };
   }
 }

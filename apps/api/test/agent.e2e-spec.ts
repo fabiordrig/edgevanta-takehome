@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // jest.mock calls MUST appear before any imports — Jest hoists them above imports
 // at transform time, but placing them first is defensive against edge cases (Pitfall 1).
 

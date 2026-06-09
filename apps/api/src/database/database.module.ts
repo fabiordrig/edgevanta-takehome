@@ -1,14 +1,8 @@
 import { Module, Global } from '@nestjs/common';
 import { DatabaseService } from './database.service';
-import {
-  CHUNK_REPOSITORY,
-} from './interfaces/chunk.repository.interface';
-import {
-  BID_ITEM_REPOSITORY,
-} from './interfaces/bid-item.repository.interface';
-import {
-  DOCUMENT_REPOSITORY,
-} from './interfaces/document.repository.interface';
+import { CHUNK_REPOSITORY } from './interfaces/chunk.repository.interface';
+import { BID_ITEM_REPOSITORY } from './interfaces/bid-item.repository.interface';
+import { DOCUMENT_REPOSITORY } from './interfaces/document.repository.interface';
 import { ChunkRepository } from './repositories/chunk.repository';
 import { BidItemRepository } from './repositories/bid-item.repository';
 import { DocumentRepository } from './repositories/document.repository';

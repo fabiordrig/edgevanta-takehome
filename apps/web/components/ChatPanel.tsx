@@ -97,33 +97,87 @@ export default function ChatPanel() {
                       <ReactMarkdown
                         remarkPlugins={[remarkGfm]}
                         components={{
-                          table: ({ children }) => <div className="overflow-x-auto my-1"><table className="text-xs border-collapse w-full">{children}</table></div>,
-                          thead: ({ children }) => <thead className="bg-black/10">{children}</thead>,
-                          th: ({ children }) => <th className="border border-muted-foreground/30 px-2 py-1 text-left font-semibold">{children}</th>,
-                          td: ({ children }) => <td className="border border-muted-foreground/20 px-2 py-1">{children}</td>,
-                          p: ({ children }) => <p className="leading-relaxed">{children}</p>,
-                          strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
-                          em: ({ children }) => <em className="italic">{children}</em>,
+                          table: ({ children }) => (
+                            <div className="overflow-x-auto my-1">
+                              <table className="text-xs border-collapse w-full">
+                                {children}
+                              </table>
+                            </div>
+                          ),
+                          thead: ({ children }) => (
+                            <thead className="bg-black/10">{children}</thead>
+                          ),
+                          th: ({ children }) => (
+                            <th className="border border-muted-foreground/30 px-2 py-1 text-left font-semibold">
+                              {children}
+                            </th>
+                          ),
+                          td: ({ children }) => (
+                            <td className="border border-muted-foreground/20 px-2 py-1">
+                              {children}
+                            </td>
+                          ),
+                          p: ({ children }) => (
+                            <p className="leading-relaxed">{children}</p>
+                          ),
+                          strong: ({ children }) => (
+                            <strong className="font-semibold">
+                              {children}
+                            </strong>
+                          ),
+                          em: ({ children }) => (
+                            <em className="italic">{children}</em>
+                          ),
                           code: ({ children, className }) =>
                             className ? (
-                              <code className="block bg-black/10 rounded p-2 text-xs font-mono whitespace-pre-wrap overflow-x-auto">{children}</code>
+                              <code className="block bg-black/10 rounded p-2 text-xs font-mono whitespace-pre-wrap overflow-x-auto">
+                                {children}
+                              </code>
                             ) : (
-                              <code className="bg-black/10 px-1 rounded text-xs font-mono">{children}</code>
+                              <code className="bg-black/10 px-1 rounded text-xs font-mono">
+                                {children}
+                              </code>
                             ),
-                          pre: ({ children }) => <pre className="my-1">{children}</pre>,
-                          ul: ({ children }) => <ul className="list-disc list-inside space-y-0.5">{children}</ul>,
-                          ol: ({ children }) => <ol className="list-decimal list-inside space-y-0.5">{children}</ol>,
-                          li: ({ children }) => <li className="leading-relaxed">{children}</li>,
-                          blockquote: ({ children }) => <blockquote className="border-l-2 border-muted-foreground/40 pl-2 text-muted-foreground text-xs">{children}</blockquote>,
-                          h1: ({ children }) => <p className="font-bold">{children}</p>,
-                          h2: ({ children }) => <p className="font-semibold">{children}</p>,
-                          h3: ({ children }) => <p className="font-semibold">{children}</p>,
-                          hr: () => <hr className="border-muted-foreground/30 my-1" />,
+                          pre: ({ children }) => (
+                            <pre className="my-1">{children}</pre>
+                          ),
+                          ul: ({ children }) => (
+                            <ul className="list-disc list-inside space-y-0.5">
+                              {children}
+                            </ul>
+                          ),
+                          ol: ({ children }) => (
+                            <ol className="list-decimal list-inside space-y-0.5">
+                              {children}
+                            </ol>
+                          ),
+                          li: ({ children }) => (
+                            <li className="leading-relaxed">{children}</li>
+                          ),
+                          blockquote: ({ children }) => (
+                            <blockquote className="border-l-2 border-muted-foreground/40 pl-2 text-muted-foreground text-xs">
+                              {children}
+                            </blockquote>
+                          ),
+                          h1: ({ children }) => (
+                            <p className="font-bold">{children}</p>
+                          ),
+                          h2: ({ children }) => (
+                            <p className="font-semibold">{children}</p>
+                          ),
+                          h3: ({ children }) => (
+                            <p className="font-semibold">{children}</p>
+                          ),
+                          hr: () => (
+                            <hr className="border-muted-foreground/30 my-1" />
+                          ),
                         }}
                       >
                         {msg.content}
                       </ReactMarkdown>
-                      {streaming && isLast && <span className="animate-pulse">|</span>}
+                      {streaming && isLast && (
+                        <span className="animate-pulse">|</span>
+                      )}
                     </div>
                   ) : (
                     <span>{msg.content}</span>

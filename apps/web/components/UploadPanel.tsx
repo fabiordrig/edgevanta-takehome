@@ -78,7 +78,8 @@ export default function UploadPanel() {
       const extOk = allowedExts.includes(ext);
       // Accept empty file.type when extension is valid (some browsers omit MIME for CSV)
       // Reject non-empty file.type that is not in the allowlist
-      const mimeOk = file.type === '' ? extOk : allowedMimes.includes(file.type);
+      const mimeOk =
+        file.type === '' ? extOk : allowedMimes.includes(file.type);
 
       if (!extOk || !mimeOk) {
         toast.error('Only CSV and PDF files are accepted');

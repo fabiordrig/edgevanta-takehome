@@ -96,7 +96,7 @@ export class BidItemRepository implements IBidItemRepository {
     const db = this.databaseService.database;
 
     const count = filenameFilter
-      ? ((
+      ? (
           db
             .prepare(
               `SELECT COUNT(*) as c FROM bid_items b
@@ -104,8 +104,12 @@ export class BidItemRepository implements IBidItemRepository {
                WHERE d.filename LIKE ?`,
             )
             .get(`%${filenameFilter}%`) as { c: number }
-        ).c)
-      : ((db.prepare('SELECT COUNT(*) as c FROM bid_items').get() as { c: number }).c);
+        ).c
+      : (
+          db.prepare('SELECT COUNT(*) as c FROM bid_items').get() as {
+            c: number;
+          }
+        ).c;
 
     return count;
   }
@@ -140,6 +144,8 @@ export class BidItemRepository implements IBidItemRepository {
       row.contractor,
     );
 
-    this.logger.debug(`insertBidItem: inserted for document_id=${row.documentId}`);
+    this.logger.debug(
+      `insertBidItem: inserted for document_id=${row.documentId}`,
+    );
   }
 }

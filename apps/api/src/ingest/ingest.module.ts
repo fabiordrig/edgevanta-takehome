@@ -7,7 +7,12 @@ import { EmbeddingService } from './embedding.service';
 
 @Module({
   controllers: [IngestController],
-  providers: [IngestService, CsvIngestService, PdfIngestService, EmbeddingService],
+  providers: [
+    IngestService,
+    CsvIngestService,
+    PdfIngestService,
+    EmbeddingService,
+  ],
   exports: [IngestService],
 })
 export class IngestModule {}

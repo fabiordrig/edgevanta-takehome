@@ -46,23 +46,32 @@ const apiKey = process.env.ANTHROPIC_API_KEY;
 if (!apiKey) {
   console.log('');
   console.log('SMOKE SCRIPT — ANTHROPIC_API_KEY not set.');
-  console.log('Live streaming test skipped. Set ANTHROPIC_API_KEY to run the full smoke test.');
+  console.log(
+    'Live streaming test skipped. Set ANTHROPIC_API_KEY to run the full smoke test.',
+  );
   console.log('');
-  console.log('SDK import shape is still documented below (no API call needed):');
+  console.log(
+    'SDK import shape is still documented below (no API call needed):',
+  );
   console.log('  betaZodTool type:', typeof betaZodTool);
   console.log('  Anthropic class:', typeof Anthropic);
   console.log('  z.object type:', typeof z.object);
   console.log('');
   console.log(`SMOKE FINDING: zod import path resolved as '${zodImportPath}'`);
-  console.log('SMOKE FINDING: toolRunner iterator shape — live test required (ANTHROPIC_API_KEY missing)');
-  console.log('SMOKE FINDING: SSE+POST routing must be verified in Plan 05 controller — default to @Sse(\'chat\') with @Body() and curl POST; fall back to GET+query if body is undefined');
+  console.log(
+    'SMOKE FINDING: toolRunner iterator shape — live test required (ANTHROPIC_API_KEY missing)',
+  );
+  console.log(
+    "SMOKE FINDING: SSE+POST routing must be verified in Plan 05 controller — default to @Sse('chat') with @Body() and curl POST; fall back to GET+query if body is undefined",
+  );
   process.exit(0);
 }
 
 // ─── 4. Define echo_tool with betaZodTool ────────────────────────────────────
 const echoTool = betaZodTool({
   name: 'echo_tool',
-  description: 'Echoes the provided text back as JSON. Use this whenever asked to echo something.',
+  description:
+    'Echoes the provided text back as JSON. Use this whenever asked to echo something.',
   inputSchema: z.object({
     text: z.string().describe('The text to echo back'),
   }),
@@ -97,7 +106,13 @@ async function main(): Promise<void> {
       model: 'claude-sonnet-4-6',
       max_tokens: 256,
       max_iterations: 3,
-      messages: [{ role: 'user', content: 'Call echo_tool with text "hi", then reply with one sentence.' }],
+      messages: [
+        {
+          role: 'user',
+          content:
+            'Call echo_tool with text "hi", then reply with one sentence.',
+        },
+      ],
       tools: [echoTool],
       stream: true,
     });
@@ -105,7 +120,9 @@ async function main(): Promise<void> {
     // Nested iterator pattern — verifies assumption A2
     for await (const messageStream of runner) {
       outerIterations++;
-      iteratorShape.push(`outer[${outerIterations}]: messageStream type=${typeof messageStream}`);
+      iteratorShape.push(
+        `outer[${outerIterations}]: messageStream type=${typeof messageStream}`,
+      );
 
       for await (const event of messageStream) {
         innerIterations++;
@@ -134,10 +151,12 @@ async function main(): Promise<void> {
       console.log(`Full assembled response (${tokenBuffer.length} chars):`);
       console.log(tokenBuffer.trim());
     }
-
   } catch (err) {
     console.error('');
-    console.error('toolRunner error:', err instanceof Error ? err.message : String(err));
+    console.error(
+      'toolRunner error:',
+      err instanceof Error ? err.message : String(err),
+    );
     console.error('');
   }
 
@@ -145,23 +164,35 @@ async function main(): Promise<void> {
   console.log('');
   console.log('=== SMOKE FINDINGS ===');
   console.log('');
-  console.log(`SMOKE FINDING: zod import path resolved as '${zodImportPath}' — use this path in all Phase 3 tool schema files`);
+  console.log(
+    `SMOKE FINDING: zod import path resolved as '${zodImportPath}' — use this path in all Phase 3 tool schema files`,
+  );
   console.log('');
 
-  const iteratorShapeDescription = outerIterations > 0
-    ? `nested async iterators confirmed — outer loop yielded ${outerIterations} messageStream(s); inner loop yielded ${innerIterations} event(s); text_delta seen=${textDeltaEventSeen}`
-    : 'iterator shape could not be confirmed — check error above';
+  const iteratorShapeDescription =
+    outerIterations > 0
+      ? `nested async iterators confirmed — outer loop yielded ${outerIterations} messageStream(s); inner loop yielded ${innerIterations} event(s); text_delta seen=${textDeltaEventSeen}`
+      : 'iterator shape could not be confirmed — check error above';
 
-  console.log(`SMOKE FINDING: toolRunner iterator shape — ${iteratorShapeDescription}`);
-  console.log('  Pattern: for await (const messageStream of runner) { for await (const event of messageStream) { ... } }');
+  console.log(
+    `SMOKE FINDING: toolRunner iterator shape — ${iteratorShapeDescription}`,
+  );
+  console.log(
+    '  Pattern: for await (const messageStream of runner) { for await (const event of messageStream) { ... } }',
+  );
   console.log('  Token-by-token arrival confirmed:', textDeltaEventSeen);
   console.log('');
-  console.log("SMOKE FINDING: SSE+POST routing must be verified in Plan 05 controller — default to @Sse('chat') with @Body() and curl POST; fall back to GET+query if body is undefined");
+  console.log(
+    "SMOKE FINDING: SSE+POST routing must be verified in Plan 05 controller — default to @Sse('chat') with @Body() and curl POST; fall back to GET+query if body is undefined",
+  );
   console.log('');
   console.log('=== smoke-toolrunner.ts COMPLETE ===');
 }
 
 main().catch((err: unknown) => {
-  console.error('Unhandled error:', err instanceof Error ? err.message : String(err));
+  console.error(
+    'Unhandled error:',
+    err instanceof Error ? err.message : String(err),
+  );
   process.exit(1);
 });
