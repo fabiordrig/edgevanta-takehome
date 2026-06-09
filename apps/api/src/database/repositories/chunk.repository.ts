@@ -52,23 +52,13 @@ export class ChunkRepository implements IChunkRepository {
     const insertChunk = db.prepare(
       'INSERT INTO chunks (document_id, content, metadata) VALUES (?, ?, ?)',
     );
-    // rowid is explicitly pinned to chunks.id so KNN JOIN never drifts after deletes.
     const insertVec = db.prepare(
-      'INSERT INTO vec_chunks(rowid, embedding) VALUES (?, ?)',
+      'INSERT INTO vec_chunks(embedding) VALUES (?)',
     );
 
     const write = db.transaction(() => {
-      const { lastInsertRowid } = insertChunk.run(
-        documentId,
-        content,
-        metadata,
-      );
-      if (!lastInsertRowid) {
-        throw new Error(
-          `chunks INSERT returned no rowid for document_id=${documentId}`,
-        );
-      }
-      insertVec.run(Number(lastInsertRowid), embedding);
+      insertChunk.run(documentId, content, metadata);
+      insertVec.run(embedding);
     });
 
     write();
