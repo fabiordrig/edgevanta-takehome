@@ -1,4 +1,4 @@
-.PHONY: setup install dev build api web typecheck lint format clean
+.PHONY: setup install dev build api web typecheck lint format clean test
 
 setup: ## First-time setup: install deps and copy .env.example → .env
 	@if [ ! -f .env ]; then \
@@ -32,6 +32,9 @@ lint: ## Run ESLint across the monorepo
 
 format: ## Format all files with Prettier
 	pnpm format
+
+test: ## Run the API test suite
+	pnpm test
 
 clean: ## Remove build artifacts and caches
 	rm -rf .turbo node_modules apps/api/dist apps/api/node_modules \
