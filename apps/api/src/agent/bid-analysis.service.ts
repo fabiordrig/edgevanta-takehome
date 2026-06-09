@@ -1,6 +1,9 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Inject, Logger } from '@nestjs/common';
 import { Outlier, OutlierLabel, OutlierResult } from '@edgevanta/types';
-import { DatabaseService } from '../database/database.service';
+import {
+  BID_ITEM_REPOSITORY,
+  IBidItemRepository,
+} from '../database/interfaces/bid-item.repository.interface';
 
 /**
  * FHWA disclaimer text appended to every OutlierResult (AGT-03).
@@ -9,18 +12,6 @@ import { DatabaseService } from '../database/database.service';
 export const FHWA_DISCLAIMER =
   'Statistical outlier detection uses Modified Z-Score (MAD-based, threshold +/-3.5) per FHWA guidance. ' +
   'Results are indicative only and should be verified against project-specific conditions before use in bid decisions.';
-
-interface BidRow {
-  id: number;
-  description: string | null;
-  unit_price: number;
-}
-
-/** Typed row for the contractor-totals SQL query (ENG-07). */
-interface ContractorRow {
-  contractor: string | null;
-  total_price: number | null;
-}
 
 export interface ContractorTotal {
   contractor: string;
@@ -79,6 +70,8 @@ export function modifiedZScores(values: number[]): number[] {
  * (MAD-based) as specified by FHWA guidance. Pure math over a DB read —
  * no LLM involved. Fully unit-testable in isolation.
  *
+ * All SQL is delegated to IBidItemRepository via the BID_ITEM_REPOSITORY token.
+ *
  * Label convention (A3 resolution from RESEARCH Open Question 1):
  *   - score > +3.5 → 'statistical_high'  (above-median price outlier)
  *   - score < -3.5 → 'token_bid'         (suspiciously low bid, construction term)
@@ -92,7 +85,10 @@ export function modifiedZScores(values: number[]): number[] {
 export class BidAnalysisService {
   private readonly logger = new Logger(BidAnalysisService.name);
 
-  constructor(private readonly databaseService: DatabaseService) {}
+  constructor(
+    @Inject(BID_ITEM_REPOSITORY)
+    private readonly bidItemRepo: IBidItemRepository,
+  ) {}
 
   /**
    * Detect statistical outliers in bid_items unit prices.
@@ -104,27 +100,14 @@ export class BidAnalysisService {
    *   - rows.length < 3 → returns { outliers: [], note, disclaimer }
    *   - MAD = 0 (all prices identical) → returns { outliers: [], note, disclaimer }
    *
-   * Security (T-03-06): itemCode is always bound as a parameterized `?` —
-   * never interpolated into the SQL string.
+   * Security (T-03-06): itemCode is always bound as a parameterized `?` inside
+   * the repository — never interpolated into the SQL string.
    *
    * @param itemCode - Optional DOT item code to scope the analysis.
    * @returns OutlierResult with labeled outliers and FHWA disclaimer.
    */
   detectOutliers(itemCode?: string): OutlierResult {
-    const db = this.databaseService.database;
-
-    // T-03-06: itemCode bound as parameterized `?` — no string interpolation.
-    const rows = itemCode
-      ? (db
-          .prepare(
-            'SELECT id, description, unit_price FROM bid_items WHERE item_code = ? AND unit_price IS NOT NULL',
-          )
-          .all(itemCode) as BidRow[])
-      : (db
-          .prepare(
-            'SELECT id, description, unit_price FROM bid_items WHERE unit_price IS NOT NULL',
-          )
-          .all() as BidRow[]);
+    const rows = this.bidItemRepo.selectPricesForOutliers(itemCode);
 
     this.logger.debug(
       `detectOutliers: ${rows.length} rows${itemCode ? ` for item_code=${itemCode}` : ''}`,
@@ -194,39 +177,14 @@ export class BidAnalysisService {
    * Optionally scoped to a filename substring for multi-document projects.
    *
    * Security (T-05-01): filenameFilter is always bound as a parameterized `?` with
-   * `%...%` — never interpolated into the SQL string.
+   * `%...%` inside the repository — never interpolated into the SQL string.
    */
   getContractorTotals(filenameFilter?: string): ContractorTotalsResult {
-    const db = this.databaseService.database;
-
     // ── Fetch rows with non-null contractor ───────────────────────────────────
-    // T-05-01: filenameFilter bound as parameterized `?` — no string interpolation.
-    const rows = filenameFilter
-      ? (db
-          .prepare(
-            `SELECT b.contractor, b.total_price FROM bid_items b
-             JOIN documents d ON b.document_id = d.id
-             WHERE d.filename LIKE ? AND b.contractor IS NOT NULL`,
-          )
-          .all(`%${filenameFilter}%`) as ContractorRow[])
-      : (db
-          .prepare(
-            'SELECT contractor, total_price FROM bid_items WHERE contractor IS NOT NULL',
-          )
-          .all() as ContractorRow[]);
+    const rows = this.bidItemRepo.getContractorRows(filenameFilter);
 
     // ── Compute total row count (for NULL-skip note) ───────────────────────────
-    const totalRows = filenameFilter
-      ? ((
-          db
-            .prepare(
-              `SELECT COUNT(*) as c FROM bid_items b
-               JOIN documents d ON b.document_id = d.id
-               WHERE d.filename LIKE ?`,
-            )
-            .get(`%${filenameFilter}%`) as { c: number }
-        ).c)
-      : ((db.prepare('SELECT COUNT(*) as c FROM bid_items').get() as { c: number }).c);
+    const totalRows = this.bidItemRepo.countRows(filenameFilter);
 
     const rowsWithContractor = rows.length;
     const nullCount = totalRows - rowsWithContractor;
@@ -235,7 +193,7 @@ export class BidAnalysisService {
     const totals = new Map<string, { total: number; count: number }>();
 
     for (const row of rows) {
-      // contractor is guaranteed non-null by the WHERE clause above
+      // contractor is guaranteed non-null by the WHERE clause in getContractorRows
       const contractor = row.contractor as string;
       // Skip rows where total_price is null — can't contribute to the sum
       if (row.total_price === null) continue;

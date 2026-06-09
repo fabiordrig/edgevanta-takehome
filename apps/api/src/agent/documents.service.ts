@@ -1,18 +1,9 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Inject, Logger } from '@nestjs/common';
 import { DocumentMeta, ParseLog } from '@edgevanta/types';
-import { DatabaseService } from '../database/database.service';
-
-/**
- * Raw row returned by the SELECT from the documents table.
- * Typed to avoid `any` (DOC-03).
- */
-interface RawDocRow {
-  id: string;
-  filename: string | null;
-  mime_type: string | null;
-  parse_log: string;
-  created_at: string;
-}
+import {
+  DOCUMENT_REPOSITORY,
+  IDocumentRepository,
+} from '../database/interfaces/document.repository.interface';
 
 /**
  * Minimal safe fallback for a corrupt or missing parse_log (T-03-05).
@@ -34,24 +25,23 @@ const FALLBACK_PARSE_LOG: ParseLog = {
  * Returns every ingested document from the documents table as DocumentMeta[].
  * parse_log JSON is decoded per row; parse failures fall back to a safe
  * default so one corrupt row cannot break the entire list (T-03-05).
+ *
+ * All SQL is delegated to IDocumentRepository via the DOCUMENT_REPOSITORY token.
  */
 @Injectable()
 export class DocumentsService {
   private readonly logger = new Logger(DocumentsService.name);
 
-  constructor(private readonly databaseService: DatabaseService) {}
+  constructor(
+    @Inject(DOCUMENT_REPOSITORY)
+    private readonly documentRepo: IDocumentRepository,
+  ) {}
 
   /**
    * Return all ingested documents ordered by ingestion time (newest first).
    */
   list(): DocumentMeta[] {
-    const rows = this.databaseService.database
-      .prepare(
-        `SELECT id, filename, mime_type, parse_log, created_at
-         FROM documents
-         ORDER BY created_at DESC`,
-      )
-      .all() as RawDocRow[];
+    const rows = this.documentRepo.listAll();
 
     return rows.map((r) => {
       let parseLog: ParseLog;
